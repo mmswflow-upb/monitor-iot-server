@@ -33,6 +33,11 @@ function writeUsers(users) {
 // JWT Secret Key
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
+// Respond with "Server Running" for browser access
+app.get("/", (req, res) => {
+  res.send("Server Running");
+});
+
 /// Registration Endpoint
 app.post("/register", async (req, res) => {
   const { email, password } = req.body;
