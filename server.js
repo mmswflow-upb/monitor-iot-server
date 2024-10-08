@@ -35,7 +35,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
 // Respond with "Server Running" for browser access
 app.get("/", (req, res) => {
-  res.send("Server Running");
+  res.send("Abd is gay ");
 });
 
 /// Registration Endpoint
