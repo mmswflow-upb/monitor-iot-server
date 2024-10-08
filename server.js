@@ -119,7 +119,11 @@ function authenticateConnection(req, callback) {
     req.user = decoded;
     callback(true);
   } catch (error) {
-    callback(false, 401, "Unauthorized");
+    if (error.name === "TokenExpiredError") {
+      callback(false, 401, "Token expired"); // Return "Token expired"
+    } else {
+      callback(false, 401, "Unauthorized"); // Handle other errors
+    }
   }
 }
 
