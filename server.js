@@ -22,7 +22,9 @@ function readUsers() {
     fs.writeFileSync(usersFile, JSON.stringify([]));
   }
   const data = fs.readFileSync(usersFile);
-  return JSON.parse(data);
+  const jsonData = JSON.parse(data);
+  console.log("JSON Data: " + jsonData);
+  return jsonData;
 }
 
 // Function to write users to the file
@@ -103,8 +105,8 @@ app.post("/login", async (req, res) => {
 });
 
 // WebSocket Authentication Middleware
-function authenticateConnection(info, callback) {
-  const url = new URL(`http://${info.req.headers.host}${info.req.url}`);
+function authenticateConnection(req, callback) {
+  const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
 
   if (!token) {
@@ -114,7 +116,7 @@ function authenticateConnection(info, callback) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    info.req.user = decoded;
+    req.user = decoded;
     callback(true);
   } catch (error) {
     callback(false, 401, "Unauthorized");
@@ -128,7 +130,9 @@ wss.on("connection", (ws, req) => {
   // Send random numbers every 10 seconds
   const intervalId = setInterval(() => {
     const randomNumber = Math.floor(Math.random() * 100);
-    ws.send(JSON.stringify({ number: randomNumber }));
+    const jsonNum = JSON.stringify({ number: randomNumber });
+    console.log(`Sending random number: ${jsonNum}`);
+    ws.send(jsonNum);
   }, 10000);
 
   ws.on("close", () => {
