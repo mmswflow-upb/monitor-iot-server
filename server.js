@@ -12,7 +12,7 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.json());
 
-// MongoDB Connection
+// MongoDB Connection aaaa
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
