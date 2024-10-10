@@ -1,10 +1,9 @@
-// server.js
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const fs = require("fs");
+const mongoose = require("mongoose");
 const WebSocket = require("ws");
 
 const app = express();
@@ -13,60 +12,47 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.json());
 
-// Load users from a JSON file (for simplicity)
-const usersFile = "./data/users.json";
-
-// Function to read users from the file
-function readUsers() {
-  if (!fs.existsSync(usersFile)) {
-    fs.writeFileSync(usersFile, JSON.stringify([]));
-  }
-  const data = fs.readFileSync(usersFile);
-  const jsonData = JSON.parse(data);
-  console.log("JSON Data: " + jsonData);
-  return jsonData;
-}
-
-// Function to write users to the file
-function writeUsers(users) {
-  fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
-}
+// MongoDB Connection
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.error("MongoDB connection error: ", err));
 
 // JWT Secret Key
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
+// Define the User schema and model
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+});
+
+const User = mongoose.model("User", userSchema, "Users");
+
 // Respond with "Server Running" for browser access
 app.get("/", (req, res) => {
-  res.send("Abd is gay ");
+  res.send("Server Running");
 });
 
 /// Registration Endpoint
 app.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
-  // Basic validation
   if (!email || !password) {
     return res
       .status(400)
       .json({ message: "Email and password are required." });
   }
 
-  const users = readUsers();
-  const existingUser = users.find((user) => user.email === email);
-
-  if (existingUser) {
-    return res.status(409).json({ message: "Email is already registered." });
-  }
-
   try {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({ message: "Email is already registered." });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = {
-      id: users.length + 1,
-      email,
-      password: hashedPassword,
-    };
-    users.push(newUser);
-    writeUsers(users);
+    const newUser = new User({ email, password: hashedPassword });
+    await newUser.save();
 
     res.status(201).json({ message: "User registered successfully." });
   } catch (error) {
@@ -79,33 +65,58 @@ app.post("/register", async (req, res) => {
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  const users = readUsers();
-  const user = users.find((user) => user.email === email);
-
-  if (!user) {
-    return res.status(401).json({ message: "Invalid email or password." });
-  }
-
   try {
-    const passwordMatch = await bcrypt.compare(password, user.password);
-
-    if (passwordMatch) {
-      const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-        expiresIn: "1h",
-      });
-
-      res.status(200).json({ token });
-    } else {
-      res.status(401).json({ message: "Invalid email or password." });
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid email or password." });
     }
+
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) {
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
+
+    const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, {
+      expiresIn: "1h",
+    });
+
+    res.status(200).json({ token });
   } catch (error) {
     console.error("Error during login:", error);
     res.status(500).json({ message: "Internal server error." });
   }
 });
 
+// Middleware to verify JWT and check if the user exists
+async function verifyToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ message: "No token provided." });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+
+    // Check if the user still exists in the database
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ message: "User no longer exists." });
+    }
+
+    next();
+  } catch (error) {
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Token expired." });
+    }
+    return res.status(401).json({ message: "Invalid token." });
+  }
+}
+
 // WebSocket Authentication Middleware
-function authenticateConnection(req, callback) {
+async function authenticateConnection(req, callback) {
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
 
@@ -117,12 +128,20 @@ function authenticateConnection(req, callback) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
+
+    // Check if the user still exists in the database
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      callback(false, 401, "User no longer exists");
+      return;
+    }
+
     callback(true);
   } catch (error) {
     if (error.name === "TokenExpiredError") {
-      callback(false, 401, "Token expired"); // Return "Token expired"
+      callback(false, 401, "Token expired");
     } else {
-      callback(false, 401, "Unauthorized"); // Handle other errors
+      callback(false, 401, "Unauthorized");
     }
   }
 }
@@ -131,7 +150,6 @@ function authenticateConnection(req, callback) {
 wss.on("connection", (ws, req) => {
   console.log(`New WebSocket connection from user ID: ${req.user.id}`);
 
-  // Send random numbers every 10 seconds
   const intervalId = setInterval(() => {
     const randomNumber = Math.floor(Math.random() * 100);
     const jsonNum = JSON.stringify({ number: randomNumber });
