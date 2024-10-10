@@ -1,5 +1,5 @@
 {
-  "name": "iot-project-server",
+  "name": "monitor-iot-server",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
