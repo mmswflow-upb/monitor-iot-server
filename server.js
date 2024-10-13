@@ -64,7 +64,6 @@ app.post("/register", async (req, res) => {
 /// Login Endpoint
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
-
   try {
     const user = await User.findOne({ email });
     if (!user) {
@@ -147,20 +146,50 @@ async function authenticateConnection(req, callback) {
 }
 
 // Handle WebSocket Connections
-wss.on("connection", (ws, req) => {
-  console.log(`New WebSocket connection from user ID: ${req.user.id}`);
+// Create a map to track active WebSocket connections with user IDs
+const connections = new Map();
 
-  const intervalId = setInterval(() => {
-    const randomNumber = Math.floor(Math.random() * 100);
-    const jsonNum = JSON.stringify({ number: randomNumber });
-    console.log(`Sending random number: ${jsonNum}`);
-    ws.send(jsonNum);
-  }, 10000);
+wss.on("connection", async(ws, req) => {
 
-  ws.on("close", () => {
-    console.log(`WebSocket connection closed for user ID: ${req.user.id}`);
-    clearInterval(intervalId);
-  });
+  // Extract token from the request URL
+  const url = new URL(`http://${req.headers.host}${req.url}`);
+  const token = url.searchParams.get("token");
+
+  if (!token) {
+    ws.close(401, "Unauthorized");
+    return;
+  }
+
+  try {
+    // Verify the token
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      ws.close(401, "User does not exist");
+      return;
+    }
+
+    // Token is valid and user exists.  Store WebSocket connection for the user ID
+    connections.set(user._id.toString(), ws);
+    console.log(`WebSocket connection established for user ID: ${user._id}`);
+
+    //Sending data periodically to the client
+    const intervalId = setInterval(() => {
+      const randomNumber = Math.floor(Math.random() * 100);
+      const jsonNum = JSON.stringify({ number: randomNumber });
+      console.log(`Sending random number: ${jsonNum}`);
+      ws.send(jsonNum);
+    }, 10000);
+
+    ws.on("close", () => {
+      console.log(`WebSocket connection closed for user ID: ${req.user.id}`);
+      clearInterval(intervalId);
+    });
+
+  } catch (error) {
+    ws.close(4001, "Unauthorised - Invalid token")
+  }
 });
 
 // Apply the authentication middleware
@@ -174,6 +203,6 @@ wss.on("headers", (headers, req) => {
 
 // Start the server
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => {
+server.listen(PORT,'127.0.0.1', () => {
   console.log(`Server is running on port ${PORT}`);
 });
