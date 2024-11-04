@@ -149,8 +149,7 @@ async function authenticateConnection(req, callback) {
 // Create a map to track active WebSocket connections with user IDs
 const connections = new Map();
 
-wss.on("connection", async(ws, req) => {
-
+wss.on("connection", async (ws, req) => {
   // Extract token from the request URL
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
@@ -186,9 +185,8 @@ wss.on("connection", async(ws, req) => {
       console.log(`WebSocket connection closed for user ID: ${req.user.id}`);
       clearInterval(intervalId);
     });
-
   } catch (error) {
-    ws.close(4001, "Unauthorised - Invalid token")
+    ws.close(4001, "Unauthorised - Invalid token");
   }
 });
 
@@ -203,6 +201,8 @@ wss.on("headers", (headers, req) => {
 
 // Start the server
 const PORT = process.env.PORT || 8080;
-server.listen(PORT,'127.0.0.1', () => {
-  console.log(`Server is running on port ${PORT}`);
+server.listen(PORT, process.env.HOSTNAME || null, () => {
+  console.log(
+    `Server is running on port ${PORT} and IP: ${server.address().address}`
+  );
 });
