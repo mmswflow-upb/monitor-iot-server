@@ -11,7 +11,9 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 // Use JSON middleware to parse JSON request bodies
-app.use(express.json());
+app.use(express.json()); // <-- Add this line
+
+
 
 // Connect to MongoDB
 mongoose
@@ -104,7 +106,9 @@ async function authenticateConnection(token) {
 // Handle WebSocket Connections
 const connections = new Map();
 
-wss.on("connection", async (ws, req) => {
+wss.on("connection", async(ws, req) => {
+
+  // Extract token from the request URL
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
   const userId = url.searchParams.get("userId");
@@ -138,11 +142,7 @@ wss.on("connection", async (ws, req) => {
     return;
   }
 
-  console.log(
-    `WebSocket connection established for user ID: ${userId} as ${clientType}${
-      deviceName ? ` with Device: ${deviceName}` : ""
-    }`
-  );
+  console.log(`WebSocket connection established for user ID: ${userId} as ${clientType}`);
 
   // Store the connection in the map
   if (!connections.has(userId)) {
@@ -157,13 +157,6 @@ wss.on("connection", async (ws, req) => {
   }
 
   //Sending data periodically to the client
-  try {
-    const intervalId = setInterval(() => {
-      const randomNumber = Math.floor(Math.random() * 100);
-      const jsonNum = JSON.stringify({ number: randomNumber });
-      console.log(`Sending random number: ${jsonNum}`);
-      ws.send(jsonNum);
-    }, 10000);
   try {
     const intervalId = setInterval(() => {
       const randomNumber = Math.floor(Math.random() * 100);
@@ -198,7 +191,7 @@ wss.on("connection", async (ws, req) => {
       }
     });
   } catch (error) {
-    ws.close(4001, "Unauthorized - Invalid token");
+    ws.close(4001, "Unauthorised - Invalid token")
   }
 });
 
