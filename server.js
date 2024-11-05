@@ -13,8 +13,6 @@ const wss = new WebSocket.Server({ server });
 // Use JSON middleware to parse JSON request bodies
 app.use(express.json()); // <-- Add this line
 
-
-
 // Connect to MongoDB
 mongoose
   .connect(process.env.MONGO_URI, {
@@ -45,7 +43,9 @@ app.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required." });
+    return res
+      .status(400)
+      .json({ message: "Email and password are required." });
   }
 
   try {
@@ -109,8 +109,7 @@ async function authenticateConnection(token) {
 // Create a map to track active WebSocket connections with user IDs
 const connections = new Map();
 
-wss.on("connection", async(ws, req) => {
-
+wss.on("connection", async (ws, req) => {
   // Extract token from the request URL
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
@@ -134,7 +133,9 @@ wss.on("connection", async(ws, req) => {
     return;
   }
 
-  console.log(`WebSocket connection established for user ID: ${userId} as ${clientType}`);
+  console.log(
+    `WebSocket connection established for user ID: ${userId} as ${clientType}`
+  );
 
   // Store the connection in the map
   if (!connections.has(userId)) {
@@ -148,22 +149,21 @@ wss.on("connection", async(ws, req) => {
     connections.get(userId).mcuSocket = ws;
   }
 
-
   //Sending data periodically to the client
-  const intervalId = setInterval(() => {
-    const randomNumber = Math.floor(Math.random() * 100);
-    const jsonNum = JSON.stringify({ number: randomNumber });
-    console.log(`Sending random number: ${jsonNum}`);
-    ws.send(jsonNum);
-  }, 10000);
+  try {
+    const intervalId = setInterval(() => {
+      const randomNumber = Math.floor(Math.random() * 100);
+      const jsonNum = JSON.stringify({ number: randomNumber });
+      console.log(`Sending random number: ${jsonNum}`);
+      ws.send(jsonNum);
+    }, 10000);
 
     ws.on("close", () => {
       console.log(`WebSocket connection closed for user ID: ${req.user.id}`);
       clearInterval(intervalId);
     });
-
   } catch (error) {
-    ws.close(4001, "Unauthorised - Invalid token")
+    ws.close(4001, "Unauthorised - Invalid token");
   }
 });
 
