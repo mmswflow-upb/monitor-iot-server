@@ -11,15 +11,13 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 // Use JSON middleware to parse JSON request bodies
-app.use(express.json()); // <-- Add this line
-
-
+app.use(express.json());
 
 // Connect to MongoDB
 mongoose
   .connect(process.env.MONGO_URI, {
-    connectTimeoutMS: 30000, // Increase timeout to 30 seconds
-    socketTimeoutMS: 30000, // Optional: Increase socket timeout as well
+    connectTimeoutMS: 30000,
+    socketTimeoutMS: 30000,
   })
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err));
@@ -61,9 +59,7 @@ app.post("/register", async (req, res) => {
     res.status(201).json({ message: "User registered successfully." });
   } catch (error) {
     console.error("Error during registration:", error);
-    res
-      .status(500)
-      .json({ message: `Internal server error at Register: ${error}` });
+    res.status(500).json({ message: `Internal server error at Register: ${error}` });
   }
 });
 
@@ -88,9 +84,7 @@ app.post("/login", async (req, res) => {
     res.status(200).json({ token });
   } catch (error) {
     console.error("Error during login:", error);
-    res
-      .status(500)
-      .json({ message: `Internal server error at Login: ${error}` });
+    res.status(500).json({ message: `Internal server error at Login: ${error}` });
   }
 });
 
@@ -106,25 +100,33 @@ async function authenticateConnection(token) {
 }
 
 // Handle WebSocket Connections
-// Create a map to track active WebSocket connections with user IDs
 const connections = new Map();
 
-wss.on("connection", async(ws, req) => {
-
-  // Extract token from the request URL
+wss.on("connection", async (ws, req) => {
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
   const userId = url.searchParams.get("userId");
-  const clientType = url.searchParams.get("type"); // `user` or `mcu`
+  const clientType = url.searchParams.get("type");
+  const deviceName = url.searchParams.get("deviceName");
+  const deviceType = url.searchParams.get("deviceType");
 
   // Log each parameter to verify
   console.log("WebSocket connection attempt:");
   console.log("  Token:", token);
   console.log("  User ID:", userId);
   console.log("  Client Type:", clientType);
+  console.log("  Device Name:", deviceName);
+  console.log("  Device Type:", deviceType);
 
+  // Check if token, userId, or clientType is missing
   if (!token || !userId || !clientType) {
     ws.close(1008, "Unauthorized: Missing token, userId, or client type");
+    return;
+  }
+
+  // Additional validation if clientType is "mcu"
+  if (clientType === "mcu" && (!deviceName || !deviceType)) {
+    ws.close(1008, "Unauthorized: Missing deviceName or deviceType for MCU");
     return;
   }
 
@@ -134,51 +136,64 @@ wss.on("connection", async(ws, req) => {
     return;
   }
 
-  console.log(`WebSocket connection established for user ID: ${userId} as ${clientType}`);
+  console.log(
+    `WebSocket connection established for user ID: ${userId} as ${clientType}${
+      deviceName ? ` with Device: ${deviceName}` : ""
+    }`
+  );
 
   // Store the connection in the map
   if (!connections.has(userId)) {
-    connections.set(userId, { userSocket: null, mcuSocket: null });
+    connections.set(userId, { userSocket: null, mcuSockets: [] });
   }
 
   // Update the connection map based on client type
   if (clientType === "user") {
     connections.get(userId).userSocket = ws;
   } else if (clientType === "mcu") {
-    connections.get(userId).mcuSocket = ws;
+    connections.get(userId).mcuSockets.push({ ws, deviceName, deviceType });
   }
-
 
   //Sending data periodically to the client
-  const intervalId = setInterval(() => {
-    const randomNumber = Math.floor(Math.random() * 100);
-    const jsonNum = JSON.stringify({ number: randomNumber });
-    console.log(`Sending random number: ${jsonNum}`);
-    ws.send(jsonNum);
-  }, 10000);
+  try {
+    const intervalId = setInterval(() => {
+      const randomNumber = Math.floor(Math.random() * 100);
+      const jsonNum = JSON.stringify({ number: randomNumber });
+      console.log(`Sending random number: ${jsonNum}`);
+      ws.send(jsonNum);
+    }, 10000);
 
     ws.on("close", () => {
-      console.log(`WebSocket connection closed for user ID: ${req.user.id}`);
+      console.log(
+        `WebSocket connection closed for user ID: ${userId}, clientType: ${clientType}${
+          deviceName ? `, Device: ${deviceName}` : ""
+        }`
+      );
       clearInterval(intervalId);
+
+      // Remove the closed connection from the map
+      if (clientType === "mcu") {
+        const userConnections = connections.get(userId);
+        userConnections.mcuSockets = userConnections.mcuSockets.filter(
+          (connection) => connection.ws !== ws
+        );
+        if (userConnections.mcuSockets.length === 0 && !userConnections.userSocket) {
+          connections.delete(userId);
+        }
+      } else if (clientType === "user") {
+        const userConnections = connections.get(userId);
+        userConnections.userSocket = null;
+        if (!userConnections.mcuSockets.length) {
+          connections.delete(userId);
+        }
+      }
     });
-
   } catch (error) {
-    ws.close(4001, "Unauthorised - Invalid token")
+    ws.close(4001, "Unauthorized - Invalid token");
   }
-});
-
-// Apply the authentication middleware
-wss.on("headers", (headers, req) => {
-  authenticateConnection(req, (auth, code, message) => {
-    if (!auth) {
-      req.destroy();
-    }
-  });
 });
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, process.env.HOSTNAME || null, () => {
-  console.log(
-    `Server is running on port ${PORT} and IP: ${server.address().address}`
-  );
+  console.log(`Server is running on port ${PORT} and IP: ${server.address().address}`);
 });
