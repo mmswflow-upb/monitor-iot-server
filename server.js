@@ -10,16 +10,20 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-app.use(express.json());
+// Use JSON middleware to parse JSON request bodies
+app.use(express.json()); // <-- Add this line
 
-// MongoDB Connection aaaa
+// In-memory connections map
+const connections = new Map(); // { userId: { userSocket: WebSocket, mcuSocket: WebSocket } }
+
+// Connect to MongoDB
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error("MongoDB connection error: ", err));
+  .catch((err) => console.error("MongoDB connection error:", err));
 
 // JWT Secret Key
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Define the User schema and model
 const userSchema = new mongoose.Schema({
@@ -29,19 +33,17 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema, "Users");
 
-// Respond with "Server Running" for browser access
+// Basic endpoint to confirm the server is running
 app.get("/", (req, res) => {
   res.send("Server Running");
 });
 
-/// Registration Endpoint
+// Registration Endpoint
 app.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res
-      .status(400)
-      .json({ message: "Email and password are required." });
+    return res.status(400).json({ message: "Email and password are required." });
   }
 
   try {
@@ -61,7 +63,7 @@ app.post("/register", async (req, res) => {
   }
 });
 
-/// Login Endpoint
+// Login Endpoint
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -86,123 +88,94 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// Middleware to verify JWT and check if the user exists
-async function verifyToken(req, res, next) {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ message: "No token provided." });
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-
-    // Check if the user still exists in the database
-    const user = await User.findById(decoded.id);
-    if (!user) {
-      return res.status(401).json({ message: "User no longer exists." });
-    }
-
-    next();
-  } catch (error) {
-    if (error.name === "TokenExpiredError") {
-      return res.status(401).json({ message: "Token expired." });
-    }
-    return res.status(401).json({ message: "Invalid token." });
-  }
-}
-
 // WebSocket Authentication Middleware
-async function authenticateConnection(req, callback) {
-  const url = new URL(`http://${req.headers.host}${req.url}`);
-  const token = url.searchParams.get("token");
-
-  if (!token) {
-    callback(false, 401, "Unauthorized");
-    return;
-  }
-
+async function authenticateConnection(token) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-
-    // Check if the user still exists in the database
     const user = await User.findById(decoded.id);
-    if (!user) {
-      callback(false, 401, "User no longer exists");
-      return;
-    }
-
-    callback(true);
+    return user ? decoded : null;
   } catch (error) {
-    if (error.name === "TokenExpiredError") {
-      callback(false, 401, "Token expired");
-    } else {
-      callback(false, 401, "Unauthorized");
-    }
+    return null;
   }
 }
 
 // Handle WebSocket Connections
-// Create a map to track active WebSocket connections with user IDs
-const connections = new Map();
-
-wss.on("connection", async(ws, req) => {
-
-  // Extract token from the request URL
+wss.on("connection", async (ws, req) => {
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
+  const userId = url.searchParams.get("userId");
+  const clientType = url.searchParams.get("type"); // `user` or `mcu`
 
-  if (!token) {
-    ws.close(401, "Unauthorized");
+  // Log each parameter to verify
+  console.log("WebSocket connection attempt:");
+  console.log("  Token:", token);
+  console.log("  User ID:", userId);
+  console.log("  Client Type:", clientType);
+
+  if (!token || !userId || !clientType) {
+    ws.close(1008, "Unauthorized: Missing token, userId, or client type");
     return;
   }
 
-  try {
-    // Verify the token
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.id);
+  const user = await authenticateConnection(token);
+  if (!user || user.id !== userId) {
+    ws.close(1008, "Unauthorized: Invalid token or userId mismatch");
+    return;
+  }
 
-    if (!user) {
-      ws.close(401, "User does not exist");
-      return;
+  console.log(`WebSocket connection established for user ID: ${userId} as ${clientType}`);
+
+  // Store the connection in the map
+  if (!connections.has(userId)) {
+    connections.set(userId, { userSocket: null, mcuSocket: null });
+  }
+
+  // Update the connection map based on client type
+  if (clientType === "user") {
+    connections.get(userId).userSocket = ws;
+  } else if (clientType === "mcu") {
+    connections.get(userId).mcuSocket = ws;
+  }
+
+
+  //Sending data periodically to the client
+  const intervalId = setInterval(() => {
+    const randomNumber = Math.floor(Math.random() * 100);
+    const jsonNum = JSON.stringify({ number: randomNumber });
+    console.log(`Sending random number: ${jsonNum}`);
+    ws.send(jsonNum);
+  }, 10000);
+
+  // // Relay data from MCU to User
+  // if (clientType === "mcu" && connections.get(userId).userSocket) {
+  //   ws.on("message", (message) => {
+  //     console.log(`Received data from MCU for user ID ${userId}: ${message}`);
+  //     const userSocket = connections.get(userId).userSocket;
+  //     if (userSocket && userSocket.readyState === WebSocket.OPEN) {
+  //       userSocket.send(message); // Send data from MCU to User
+  //     }
+  //   });
+  // }
+
+  // Handle WebSocket close events
+  ws.on("close", () => {
+    console.log(`WebSocket connection closed for user ID: ${userId} as ${clientType}`);
+    const connection = connections.get(userId);
+    if (clientType === "user") {
+      connection.userSocket = null;
+    } else if (clientType === "mcu") {
+      connection.mcuSocket = null;
     }
 
-    // Token is valid and user exists.  Store WebSocket connection for the user ID
-    connections.set(user._id.toString(), ws);
-    console.log(`WebSocket connection established for user ID: ${user._id}`);
-
-    //Sending data periodically to the client
-    const intervalId = setInterval(() => {
-      const randomNumber = Math.floor(Math.random() * 100);
-      const jsonNum = JSON.stringify({ number: randomNumber });
-      console.log(`Sending random number: ${jsonNum}`);
-      ws.send(jsonNum);
-    }, 10000);
-
-    ws.on("close", () => {
-      console.log(`WebSocket connection closed for user ID: ${req.user.id}`);
-      clearInterval(intervalId);
-    });
-
-  } catch (error) {
-    ws.close(4001, "Unauthorised - Invalid token")
-  }
-});
-
-// Apply the authentication middleware
-wss.on("headers", (headers, req) => {
-  authenticateConnection(req, (auth, code, message) => {
-    if (!auth) {
-      req.destroy();
+    // Remove the entry if both connections are null
+    if (!connection.userSocket && !connection.mcuSocket) {
+      connections.delete(userId);
     }
   });
 });
 
 // Start the server
-const PORT = process.env.PORT || 8080;
-server.listen(PORT,'127.0.0.1', () => {
+const PORT = process.env.PORT;
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`Server is running on port ${PORT}`);
 });
