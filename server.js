@@ -57,7 +57,9 @@ app.post("/register", async (req, res) => {
     res.status(201).json({ message: "User registered successfully." });
   } catch (error) {
     console.error("Error during registration:", error);
-    res.status(500).json({ message: "Internal server error." });
+    res
+      .status(500)
+      .json({ message: `Internal server error at Register: ${error}` });
   }
 });
 
@@ -82,7 +84,9 @@ app.post("/login", async (req, res) => {
     res.status(200).json({ token });
   } catch (error) {
     console.error("Error during login:", error);
-    res.status(500).json({ message: "Internal server error." });
+    res
+      .status(500)
+      .json({ message: `Internal server error at Login: ${error}` });
   }
 });
 
