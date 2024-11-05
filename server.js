@@ -43,7 +43,9 @@ app.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required." });
+    return res
+      .status(400)
+      .json({ message: "Email and password are required." });
   }
 
   try {
@@ -155,6 +157,13 @@ wss.on("connection", async (ws, req) => {
   }
 
   //Sending data periodically to the client
+  try {
+    const intervalId = setInterval(() => {
+      const randomNumber = Math.floor(Math.random() * 100);
+      const jsonNum = JSON.stringify({ number: randomNumber });
+      console.log(`Sending random number: ${jsonNum}`);
+      ws.send(jsonNum);
+    }, 10000);
   try {
     const intervalId = setInterval(() => {
       const randomNumber = Math.floor(Math.random() * 100);
