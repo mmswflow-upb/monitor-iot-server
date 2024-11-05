@@ -1,1 +1,1 @@
-web: nginx -c $HOME/nginx.conf && node server.js
+web: node server.js
