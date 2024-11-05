@@ -13,12 +13,13 @@ const wss = new WebSocket.Server({ server });
 // Use JSON middleware to parse JSON request bodies
 app.use(express.json()); // <-- Add this line
 
-// In-memory connections map
-const connections = new Map(); // { userId: { userSocket: WebSocket, mcuSocket: WebSocket } }
 
 // Connect to MongoDB
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, {
+    connectTimeoutMS: 30000, // Increase timeout to 30 seconds
+    socketTimeoutMS: 30000, // Optional: Increase socket timeout as well
+  })
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
@@ -59,7 +60,9 @@ app.post("/register", async (req, res) => {
     res.status(201).json({ message: "User registered successfully." });
   } catch (error) {
     console.error("Error during registration:", error);
-    res.status(500).json({ message: "Internal server error." });
+    res
+      .status(500)
+      .json({ message: `Internal server error at Register: ${error}` });
   }
 });
 
@@ -84,7 +87,9 @@ app.post("/login", async (req, res) => {
     res.status(200).json({ token });
   } catch (error) {
     console.error("Error during login:", error);
-    res.status(500).json({ message: "Internal server error." });
+    res
+      .status(500)
+      .json({ message: `Internal server error at Login: ${error}` });
   }
 });
 
@@ -100,7 +105,12 @@ async function authenticateConnection(token) {
 }
 
 // Handle WebSocket Connections
-wss.on("connection", async (ws, req) => {
+// Create a map to track active WebSocket connections with user IDs
+const connections = new Map();
+
+wss.on("connection", async(ws, req) => {
+
+  // Extract token from the request URL
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
   const userId = url.searchParams.get("userId");
@@ -146,36 +156,28 @@ wss.on("connection", async (ws, req) => {
     ws.send(jsonNum);
   }, 10000);
 
-  // // Relay data from MCU to User
-  // if (clientType === "mcu" && connections.get(userId).userSocket) {
-  //   ws.on("message", (message) => {
-  //     console.log(`Received data from MCU for user ID ${userId}: ${message}`);
-  //     const userSocket = connections.get(userId).userSocket;
-  //     if (userSocket && userSocket.readyState === WebSocket.OPEN) {
-  //       userSocket.send(message); // Send data from MCU to User
-  //     }
-  //   });
-  // }
+    ws.on("close", () => {
+      console.log(`WebSocket connection closed for user ID: ${req.user.id}`);
+      clearInterval(intervalId);
+    });
 
-  // Handle WebSocket close events
-  ws.on("close", () => {
-    console.log(`WebSocket connection closed for user ID: ${userId} as ${clientType}`);
-    const connection = connections.get(userId);
-    if (clientType === "user") {
-      connection.userSocket = null;
-    } else if (clientType === "mcu") {
-      connection.mcuSocket = null;
-    }
+  } catch (error) {
+    ws.close(4001, "Unauthorised - Invalid token")
+  }
+});
 
-    // Remove the entry if both connections are null
-    if (!connection.userSocket && !connection.mcuSocket) {
-      connections.delete(userId);
+// Apply the authentication middleware
+wss.on("headers", (headers, req) => {
+  authenticateConnection(req, (auth, code, message) => {
+    if (!auth) {
+      req.destroy();
     }
   });
 });
 
-// Start the server
-const PORT = process.env.PORT;
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Server is running on port ${PORT}`);
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, process.env.HOSTNAME || null, () => {
+  console.log(
+    `Server is running on port ${PORT} and IP: ${server.address().address}`
+  );
 });
