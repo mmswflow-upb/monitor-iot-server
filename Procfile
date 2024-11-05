@@ -1,1 +1,1 @@
-web: bin/start-nginx npm start
+web: nginx -c nginx.conf && node server.js
