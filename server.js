@@ -134,31 +134,13 @@ wss.on("connection", async (ws, req) => {
   }
   connections.get(userId).push(ws);
 
-  // Subscribe to Redis channel for this user if not already subscribed
+  // Only subscribe to the Redis channel once per userId
   if (connections.get(userId).length === 1) {
     redisSubscriber.subscribe(userId, (err) => {
       if (err) console.error(`Failed to subscribe to channel ${userId}:`, err);
-      else console.log(`Subscribed to channel ${userId}`);
+      else console.log(`Subscribed to Redis channel for user ${userId}`);
     });
   }
-
-  // Listen for messages on the Redis channel (only once per userId)
-  redisSubscriber.on("message", (channel, message) => {
-    if (channel === userId) {
-      connections.get(userId)?.forEach((socket) => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(message); // Send the message to the WebSocket connection
-        }
-      });
-    }
-  });
-
-  // Set up a keep-alive interval
-  const interval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
-    }
-  }, 50000); // Send a ping every 50 seconds (below Heroku's 55-second timeout)
 
   // Handle incoming WebSocket messages
   ws.on("message", (data) => {
@@ -175,16 +157,46 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", () => {
     console.log(`WebSocket connection closed for user ${userId}`);
     const userConnections = connections.get(userId) || [];
-    connections.set(
-      userId,
-      userConnections.filter((socket) => socket !== ws)
-    );
 
-    if (connections.get(userId)?.length === 0) {
+    // Remove the closed WebSocket from the connections array
+    const updatedConnections = userConnections.filter(
+      (socket) => socket !== ws
+    );
+    if (updatedConnections.length > 0) {
+      connections.set(userId, updatedConnections);
+    } else {
+      // If no connections remain, clean up the user entry and unsubscribe from Redis
       connections.delete(userId);
-      redisSubscriber.unsubscribe(userId);
+      redisSubscriber.unsubscribe(userId, (err) => {
+        if (err)
+          console.error(`Failed to unsubscribe from channel ${userId}:`, err);
+        else console.log(`Unsubscribed from Redis channel for user ${userId}`);
+      });
     }
   });
+
+  // Set up a keep-alive interval
+  const interval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
+    }
+  }, 50000); // Send a ping every 50 seconds (below Heroku's 55-second timeout)
+
+  // Clear the keep-alive interval on WebSocket closure
+  ws.on("close", () => {
+    clearInterval(interval);
+  });
+});
+
+// Global Redis message listener
+redisSubscriber.on("message", (channel, message) => {
+  if (connections.has(channel)) {
+    connections.get(channel).forEach((socket) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(message); // Send the message to all open WebSocket connections for the user
+      }
+    });
+  }
 });
 
 // Start server
