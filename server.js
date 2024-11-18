@@ -153,6 +153,13 @@ wss.on("connection", async (ws, req) => {
     }
   });
 
+  // Set up a keep-alive interval
+  const interval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
+    }
+  }, 50000); // Send a ping every 50 seconds (below Heroku's 55-second timeout)
+
   // Handle incoming WebSocket messages
   ws.on("message", (data) => {
     console.log(`Received message from user ${userId}:`, data);
