@@ -107,7 +107,6 @@ async function authenticateConnection(token) {
   }
 }
 
-// WebSocket connection handling
 wss.on("connection", async (ws, req) => {
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
@@ -135,13 +134,15 @@ wss.on("connection", async (ws, req) => {
   }
   connections.get(userId).push(ws);
 
-  // Subscribe to Redis channel for this user
-  redisSubscriber.subscribe(userId, (err) => {
-    if (err) console.error(`Failed to subscribe to channel ${userId}:`, err);
-    else console.log(`Subscribed to channel ${userId}`);
-  });
+  // Subscribe to Redis channel for this user if not already subscribed
+  if (connections.get(userId).length === 1) {
+    redisSubscriber.subscribe(userId, (err) => {
+      if (err) console.error(`Failed to subscribe to channel ${userId}:`, err);
+      else console.log(`Subscribed to channel ${userId}`);
+    });
+  }
 
-  // Listen for messages on the Redis channel
+  // Listen for messages on the Redis channel (only once per userId)
   redisSubscriber.on("message", (channel, message) => {
     if (channel === userId) {
       connections.get(userId)?.forEach((socket) => {
@@ -157,8 +158,7 @@ wss.on("connection", async (ws, req) => {
     console.log(`Received message from user ${userId}:`, data);
 
     try {
-      // Publish the message to the Redis channel
-      redisPublisher.publish(userId, data);
+      redisPublisher.publish(userId, data); // Publish the message to the Redis channel
     } catch (err) {
       console.error(`Error publishing message to channel ${userId}:`, err);
     }
