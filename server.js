@@ -147,7 +147,7 @@ wss.on("connection", async (ws, req) => {
     console.log(`Received message from user ${userId}:`, data);
 
     try {
-      redisPublisher.publish(userId, data); // Publish the message to the Redis channel
+      redisPublisher.publish(userId, JSON.stringify(data)); // Publish the message to the Redis channel
     } catch (err) {
       console.error(`Error publishing message to channel ${userId}:`, err);
     }
