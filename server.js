@@ -249,18 +249,38 @@ wss.on("connection", async (ws, req) => {
     }
   });
 
-  // Set up a keep-alive interval
-  const interval = setInterval(() => {
+  // Set up a keep-alive interval and handle ping/pong
+  let pingTimeout;
+
+  const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
-    } else {
-      ws.close(1008, "Device on other end is not responding");
+      console.log("Ping sent");
+
+      // Start a timeout to wait for pong
+      pingTimeout = setTimeout(() => {
+        console.log("No pong received, closing the connection");
+        ws.close(); // Close the connection if pong is not received in time
+      }, 10000); // Wait 10 seconds for the pong
     }
-  }, 10000); // Send a ping every 10 seconds (below Heroku's 55-second timeout)
+  };
+
+  // Set an interval to send ping every 50 seconds
+  const interval = setInterval(sendPing, 10000); // Send a ping every 50 seconds
+
+  // Handle incoming pong responses
+  ws.on("message", (message) => {
+    const content = JSON.parse(message);
+    if (content.type === "pong") {
+      console.log("Pong received");
+      clearTimeout(pingTimeout); // Clear the timeout if pong is received
+    }
+  });
 
   // Clear the keep-alive interval on WebSocket closure
   ws.on("close", () => {
     clearInterval(interval);
+    clearTimeout(pingTimeout); // Clear any existing timeout
   });
 });
 
