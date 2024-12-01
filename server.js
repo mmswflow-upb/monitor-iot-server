@@ -175,7 +175,10 @@ wss.on("connection", async (ws, req) => {
       }
     });
 
-    redisPublisher.publish(userId, JSON.stringify());
+    redisPublisher.publish(
+      userId,
+      JSON.stringify({ messageType: "mcuUpdatesDevice", deviceObj: deviceObj })
+    );
   }
 
   // Handle WebSocket closure
@@ -216,8 +219,8 @@ wss.on("connection", async (ws, req) => {
 
         // Adding message type as updateDevice
         const messageContent = {
-          ...content,
-          messageType: "updateDevice", // Marking the type of the message
+          deviceObj: content,
+          messageType: "userUpdatesDevice", // Marking the type of the message
         };
         redisPublisher.publish(userId, JSON.stringify(messageContent));
       }
@@ -227,8 +230,8 @@ wss.on("connection", async (ws, req) => {
 
       // Adding message type as updateDevice
       const messageContent = {
-        ...deviceObj,
-        messageType: "updateDevice", // Marking the type of the message
+        deviceObj: content,
+        messageType: "mcuUpdatesDevice", // Marking the type of the message
       };
       redisPublisher.publish(userId, JSON.stringify(messageContent));
     }
