@@ -248,8 +248,6 @@ wss.on("connection", async (ws, req) => {
 
     // Check for messageType and handle accordingly
     if (clientType === "user") {
-      console.log("USER RECEIVED content from Redis: ", parsedContent);
-
       // Handle removing a device
       if (
         parsedContent["messageType"] === "removeDevice" &&
