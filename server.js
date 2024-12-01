@@ -223,8 +223,6 @@ wss.on("connection", async (ws, req) => {
 
   // Handle incoming WebSocket messages
   ws.on("message", (content) => {
-    console.log(`Received content from client ${userId}:`, content);
-
     content = JSON.parse(content);
 
     if (clientType === "user") {
