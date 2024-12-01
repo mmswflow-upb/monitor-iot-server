@@ -191,10 +191,13 @@ wss.on("connection", async (ws, req) => {
           );
 
           //Send list of connected devices to user through socket
-          await sendDataThruSocket(
-            ws,
+          ws.send(
             JSON.stringify({ devices: Array.from(connectedDevices.values()) })
           );
+          // await sendDataThruSocket(
+          //   ws,
+          //   JSON.stringify({ devices: Array.from(connectedDevices.values()) })
+          // );
         }
       }
     } else if (clientType === "mcu") {
@@ -202,7 +205,7 @@ wss.on("connection", async (ws, req) => {
       if (content === "getDevices") {
         redisPublisher.publish(userId, JSON.stringify(deviceObj));
         console.log(
-          "USER: REQUESTED device objects, sending device object: ",
+          "DEVICE: USER REQUESTED device objects, sending device object: ",
           deviceObj["deviceName"]
         );
       } else {
@@ -211,7 +214,8 @@ wss.on("connection", async (ws, req) => {
         if (content["deviceId"]) {
           if (content["deviceId"] == deviceObj["deviceId"]) {
             deviceObj["data"] = content["data"];
-            await sendDataThruSocket(ws, deviceObj);
+            ws.send(JSON.stringify(deviceObj));
+            //await sendDataThruSocket(ws, deviceObj);
           }
         }
       }
