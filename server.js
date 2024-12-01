@@ -132,6 +132,7 @@ wss.on("connection", async (ws, req) => {
   const deviceId = url.searchParams.get("deviceId");
   const deviceName = url.searchParams.get("deviceName");
   const deviceType = url.searchParams.get("deviceType");
+  var deviceObj = {};
 
   if (clientType === "user") {
     //Request devices to send their device objects
@@ -149,7 +150,10 @@ wss.on("connection", async (ws, req) => {
         console.log(`USER: subbed to Redis channel`);
       }
     });
-    redisPublisher.publish(userId, "getDevices");
+    redisPublisher.publish(
+      userId,
+      JSON.stringify({ messageType: "getDevices" })
+    );
   } else if (clientType === "mcu") {
     if (!deviceId || !deviceName || !deviceType) {
       ws.close(1008, "Unauthorized: Missing deviceId, deviceName, deviceType");
@@ -171,7 +175,7 @@ wss.on("connection", async (ws, req) => {
       }
     });
 
-    redisPublisher.publish(userId, JSON.stringify(deviceObj));
+    redisPublisher.publish(userId, JSON.stringify());
   }
 
   // Handle WebSocket closure
@@ -232,7 +236,7 @@ wss.on("connection", async (ws, req) => {
 
   // Handling Redis messages with added messageType
   redisSubscriber.on("message", async (incomingUserId, content) => {
-    if (userId != incomingUserId) {
+    if (userId !== incomingUserId) {
       return;
     }
 
@@ -242,6 +246,8 @@ wss.on("connection", async (ws, req) => {
     // Check for messageType and handle accordingly
     if (clientType === "user") {
       console.log("USER RECEIVED content from Redis: ", parsedContent);
+
+      // Handle removing a device
       if (
         parsedContent["messageType"] === "removeDevice" &&
         parsedContent["deviceId"]
@@ -251,40 +257,77 @@ wss.on("connection", async (ws, req) => {
           "USER: DELETING device with ID: ",
           parsedContent["deviceId"]
         );
-      } else if (
-        parsedContent["messageType"] === "updateDevice" &&
-        parsedContent["deviceId"]
-      ) {
-        connectedDevices.set(parsedContent["deviceId"], parsedContent);
-        console.log(
-          "USER: UPDATING connected device: ",
-          parsedContent["deviceName"]
-        );
 
-        // Send list of connected devices to user through socket
+        // Optionally, send updated device list to the user
         if (sockets.has(token)) {
-          console.log("USER: Sending list of connected devices to user");
+          console.log(
+            "USER: Sending updated list of connected devices to user"
+          );
           sockets.get(token).send(
             JSON.stringify({
               devices: Array.from(connectedDevices.values()),
-              messageType: "updateDevice", // Marking the type of the message
+              messageType: "removeDevice", // Marking the type of the message
+            })
+          );
+        }
+      }
+
+      // Handle updating a device by the user
+      else if (
+        parsedContent["messageType"] === "mcuUpdatesDevice" &&
+        parsedContent["deviceObj"]
+      ) {
+        connectedDevices.set(
+          parsedContent["deviceObj"]["deviceId"],
+          parsedContent["deviceObj"]
+        );
+        console.log(
+          "MCU: UPDATING connected device: ",
+          parsedContent["deviceObj"]["deviceName"]
+        );
+
+        // Send updated list of connected devices to the user
+        if (sockets.has(token)) {
+          console.log(
+            "USER: Sending updated list of connected devices to user"
+          );
+          sockets.get(token).send(
+            JSON.stringify({
+              devices: Array.from(connectedDevices.values()),
+              messageType: "userUpdatesDevice", // Marking the type of the message
             })
           );
         }
       }
     } else if (clientType === "mcu") {
       console.log("MCU: RECEIVED content from Redis: ", parsedContent);
+
+      // Handle getting devices request
       if (parsedContent["messageType"] === "getDevices") {
-        redisPublisher.publish(userId, JSON.stringify(deviceObj));
+        // Publish the device object when requested
+        redisPublisher.publish(
+          userId,
+          JSON.stringify({
+            messageType: "mcuUpdatesDevice", // Include messageType in the published content
+            deviceObj: deviceObj,
+          })
+        );
         console.log(
           "DEVICE: USER REQUESTED device objects, sending device object: ",
           deviceObj["deviceName"]
         );
-      } else if (
-        parsedContent["messageType"] === "updateDevice" &&
-        parsedContent["deviceId"] === deviceObj["deviceId"]
+      }
+
+      // Handle updating device from MCU
+      else if (
+        parsedContent["messageType"] === "userUpdatesDevice" &&
+        parsedContent["deviceObj"]["deviceId"] === deviceObj["deviceId"]
       ) {
-        deviceObj["data"] = parsedContent["data"];
+        // Update the device object data
+        deviceObj["data"] = parsedContent["deviceObj"]["data"];
+        console.log("MCU: Updated device object: ", deviceObj);
+
+        // If the socket exists, send the updated device object to the MCU
         if (sockets.has(token)) {
           console.log("MCU: Sending updated device object to MCU");
           sockets.get(token).send(JSON.stringify(deviceObj));
