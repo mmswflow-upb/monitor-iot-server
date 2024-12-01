@@ -127,7 +127,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   console.log(
-    `WebSocket connection established for user ${userId}, type: ${clientType}`
+    `\nWebSocket connection established for clien-type: ${clientType}`
   );
 
   //When user/device first connects, users have to populate a list of connected devices,
@@ -144,7 +144,7 @@ wss.on("connection", async (ws, req) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
-        console.log(`User subbed to Redis channel for user ${userId}`);
+        console.log(`\nUser subbed to Redis channel`);
       }
     });
   } else if (clientType === "mcu") {
@@ -161,7 +161,7 @@ wss.on("connection", async (ws, req) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
-        console.log(`Device subbed to Redis channel for user ${userId}`);
+        console.log(`${deviceName} subbed to Redis channel`);
       }
     });
   }
@@ -169,9 +169,6 @@ wss.on("connection", async (ws, req) => {
   //Handle incoming messages from Redis channel
   redisSubscriber.on("message", (incomingUserId, content) => {
     //Check if the incoming message is for the current connected client
-
-    console.log("Incoming message from Redis:", incomingUserId, content);
-    console.log("Current connected client:", clientType);
 
     if (userId != incomingUserId) {
       return;
@@ -182,6 +179,7 @@ wss.on("connection", async (ws, req) => {
       //Device disconnected, so it must be removed from the list of connected devices
       if (content["removeDevice"] && content["deviceId"]) {
         connectedDevices.delete(content["deviceId"]);
+        console.log("\nUSER: DELETING device with ID: ", content["deviceId"]);
       } else {
         //Device connected or updated its state, so we updated the list of connected devices
         if (
@@ -190,6 +188,10 @@ wss.on("connection", async (ws, req) => {
           content["deviceType"]
         ) {
           connectedDevices.set(content["deviceId"], content);
+          console.log(
+            "\nUSER: UPDATING list of connected devices: ",
+            content["deviceName"]
+          );
 
           //Send list of connected devices to user through socket
           sendDataThruSocket(
@@ -202,7 +204,12 @@ wss.on("connection", async (ws, req) => {
       //User requested all connected devices to return their device objects
       if (content === "getDevices") {
         redisPublisher.publish(userId, JSON.stringify(deviceObj));
+        console.log(
+          "\nUSER: REQUESTED device objects, sending device object: ",
+          deviceObj["deviceName"]
+        );
       } else {
+        console.log("\nMCU: RECEIVED content from Redis: ", content);
         //Send the device object back to MCU (the state of device is getting updated)
         if (content["deviceId"]) {
           if (content["deviceId"] == deviceObj["deviceId"]) {
@@ -291,6 +298,7 @@ wss.on("connection", async (ws, req) => {
 
 //Receives socket and data as object then applies json stringify to data and sends it through the socket
 function sendDataThruSocket(socket, data) {
+  console.log("Sending data through socket:", data);
   if (socket.readyState === WebSocket.OPEN) {
     try {
       socket.send(JSON.stringify(data));
