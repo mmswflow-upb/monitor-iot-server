@@ -109,11 +109,21 @@ async function authenticateConnection(token) {
   }
 }
 
+//Store sockets associated with tokens
+const sockets = new Map();
+
+var userId;
+var clientType;
+var deviceId;
+var deviceName;
+var deviceType;
+var token;
+
 wss.on("connection", async (ws, req) => {
   const url = new URL(`http://${req.headers.host}${req.url}`);
-  const token = url.searchParams.get("token");
-  const userId = url.searchParams.get("userId");
-  const clientType = url.searchParams.get("type");
+  token = url.searchParams.get("token");
+  userId = url.searchParams.get("userId");
+  clientType = url.searchParams.get("type");
 
   if (!token || !userId || !clientType) {
     ws.close(1008, "Unauthorized: Missing token, userId, or client type");
@@ -128,12 +138,18 @@ wss.on("connection", async (ws, req) => {
 
   //When user/device first connects, users have to populate a list of connected devices,
   //devices have to subscribe to the pub/sub channels and send their device objects
-  const deviceId = url.searchParams.get("deviceId");
-  const deviceName = url.searchParams.get("deviceName");
-  const deviceType = url.searchParams.get("deviceType");
+  deviceId = url.searchParams.get("deviceId");
+  deviceName = url.searchParams.get("deviceName");
+  deviceType = url.searchParams.get("deviceType");
 
   if (clientType === "user") {
     //Request devices to send their device objects
+
+    //Check if the user is already connected
+    if (!sockets.get(token)) {
+      sockets.set(token, ws);
+      console.log("USER: ADDED SOCKET TO MAP");
+    }
 
     await redisSubscriber.subscribe(userId, (err) => {
       if (err) {
@@ -149,6 +165,8 @@ wss.on("connection", async (ws, req) => {
       return;
     }
 
+    sockets.set(token, ws);
+
     deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, {});
 
     await redisSubscriber.subscribe(userId, (err) => {
@@ -161,66 +179,6 @@ wss.on("connection", async (ws, req) => {
 
     redisPublisher.publish(userId, JSON.stringify(deviceObj));
   }
-
-  //Handle incoming messages from Redis channel
-  redisSubscriber.on("message", async (incomingUserId, content) => {
-    //Check if the incoming message is for the current connected client
-
-    if (userId != incomingUserId) {
-      return;
-    }
-
-    //Current connected client is a user or device
-    if (clientType === "user") {
-      console.log("USER RECEIVED content from Redis: ", content);
-      //Device disconnected, so it must be removed from the list of connected devices
-      if (content["removeDevice"] && content["deviceId"]) {
-        connectedDevices.delete(content["deviceId"]);
-        console.log("USER: DELETING device with ID: ", content["deviceId"]);
-      } else {
-        //Device connected or updated its state, so we updated the list of connected devices
-        if (
-          content["deviceId"] &&
-          content["deviceName"] &&
-          content["deviceType"]
-        ) {
-          connectedDevices.set(content["deviceId"], content);
-          console.log(
-            "USER: UPDATING connected device: ",
-            content["deviceName"]
-          );
-
-          //Send list of connected devices to user through socket
-          ws.send(
-            JSON.stringify({ devices: Array.from(connectedDevices.values()) })
-          );
-          // await sendDataThruSocket(
-          //   ws,
-          //   JSON.stringify({ devices: Array.from(connectedDevices.values()) })
-          // );
-        }
-      }
-    } else if (clientType === "mcu") {
-      //User requested all connected devices to return their device objects
-      if (content === "getDevices") {
-        redisPublisher.publish(userId, JSON.stringify(deviceObj));
-        console.log(
-          "DEVICE: USER REQUESTED device objects, sending device object: ",
-          deviceObj["deviceName"]
-        );
-      } else {
-        console.log("MCU: RECEIVED content from Redis: ", content);
-        //Send the device object back to MCU (the state of device is getting updated)
-        if (content["deviceId"]) {
-          if (content["deviceId"] == deviceObj["deviceId"]) {
-            deviceObj["data"] = content["data"];
-            ws.send(JSON.stringify(deviceObj));
-            //await sendDataThruSocket(ws, deviceObj);
-          }
-        }
-      }
-    }
-  });
 
   // Handle incoming WebSocket messages
   ws.on("message", (content) => {
@@ -249,6 +207,8 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", () => {
     console.log(`WebSocket connection closed for user ${userId}`);
 
+    sockets.delete(token);
+
     // Unsubscribe from Redis channel
     redisSubscriber.unsubscribe(userId, (err) => {
       if (err)
@@ -265,42 +225,98 @@ wss.on("connection", async (ws, req) => {
     }
   });
 
-  // Set up a keep-alive interval and handle ping/pong
-  //let pingTimeout;
+  //Set up a keep-alive interval and handle ping/pong
+  let pingTimeout;
 
-  // const sendPing = () => {
-  //   if (ws.readyState === WebSocket.OPEN) {
-  //     ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
+  const sendPing = () => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
 
-  //     // Start a timeout to wait for pong
-  //     pingTimeout = setTimeout(() => {
-  //       redisSubscriber.unsubscribe(userId);
-  //       ws.close(); // Close the connection if pong is not received in time
-  //     }, 10000); // Wait 10 seconds for the pong
-  //   }
-  // };
+      // Start a timeout to wait for pong
+      pingTimeout = setTimeout(() => {
+        sockets.delete(token);
+        redisSubscriber.unsubscribe(userId);
+        ws.close(); // Close the connection if pong is not received in time
+      }, 10000); // Wait 10 seconds for the pong
+    }
+  };
 
-  // // Set an interval to send ping every 50 seconds
-  // const interval = setInterval(sendPing, 50000); // Send a ping every 50 seconds
+  // Set an interval to send ping every 50 seconds
+  const interval = setInterval(sendPing, 50000); // Send a ping every 50 seconds
 
-  // // Handle incoming pong responses
-  // ws.on("message", (message) => {
-  //   const content = JSON.parse(message);
-  //   if (content.type === "pong") {
-  //     clearTimeout(pingTimeout); // Clear the timeout if pong is received
-  //   }
-  // });
+  // Handle incoming pong responses
+  ws.on("message", (message) => {
+    const content = JSON.parse(message);
+    if (content.type === "pong") {
+      clearTimeout(pingTimeout); // Clear the timeout if pong is received
+    }
+  });
 
-  // // Clear the keep-alive interval on WebSocket closure
-  // ws.on("close", () => {
-  //   clearInterval(interval);
-  //   clearTimeout(pingTimeout); // Clear any existing timeout
-  // });
+  // Clear the keep-alive interval on WebSocket closure
+  ws.on("close", () => {
+    clearInterval(interval);
+    clearTimeout(pingTimeout); // Clear any existing timeout
+  });
+});
+
+//Handle incoming messages from Redis channel
+redisSubscriber.on("message", async (incomingUserId, content) => {
+  //Check if the incoming message is for the current connected client
+
+  if (userId != incomingUserId) {
+    return;
+  }
+
+  //Current connected client is a user or device
+  if (clientType === "user") {
+    console.log("USER RECEIVED content from Redis: ", content);
+    //Device disconnected, so it must be removed from the list of connected devices
+    if (content["removeDevice"] && content["deviceId"]) {
+      connectedDevices.delete(content["deviceId"]);
+      console.log("USER: DELETING device with ID: ", content["deviceId"]);
+    } else {
+      //Device connected or updated its state, so we updated the list of connected devices
+      if (
+        content["deviceId"] &&
+        content["deviceName"] &&
+        content["deviceType"]
+      ) {
+        connectedDevices.set(content["deviceId"], content);
+        console.log("USER: UPDATING connected device: ", content["deviceName"]);
+
+        //Send list of connected devices to user through socket
+
+        await sendDataThruSocket(
+          token,
+          JSON.stringify({ devices: Array.from(connectedDevices.values()) })
+        );
+      }
+    }
+  } else if (clientType === "mcu") {
+    //User requested all connected devices to return their device objects
+    if (content === "getDevices") {
+      redisPublisher.publish(userId, JSON.stringify(deviceObj));
+      console.log(
+        "DEVICE: USER REQUESTED device objects, sending device object: ",
+        deviceObj["deviceName"]
+      );
+    } else {
+      console.log("MCU: RECEIVED content from Redis: ", content);
+      //Send the device object back to MCU (the state of device is getting updated)
+      if (content["deviceId"]) {
+        if (content["deviceId"] == deviceObj["deviceId"]) {
+          deviceObj["data"] = content["data"];
+          await sendDataThruSocket(token, deviceObj);
+        }
+      }
+    }
+  }
 });
 
 //Receives socket and data as object then applies json stringify to data and sends it through the socket
-async function sendDataThruSocket(socket, data) {
+async function sendDataThruSocket(token, data) {
   console.log("SENDING DATA THRU SOCKET:", data);
+  socket = sockets.get(token);
   if (socket.readyState === WebSocket.OPEN) {
     try {
       socket.send(JSON.stringify(data));
