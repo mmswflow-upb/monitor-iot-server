@@ -367,7 +367,7 @@ wss.on("connection", async (ws, req) => {
   };
 
   // Set an interval to send ping every 50 seconds
-  const interval = setInterval(sendPing, 50000); // Send a ping every 50 seconds
+  const interval = setInterval(sendPing, 15000); // Send a ping every 50 seconds
 
   // Handle incoming pong responses
   ws.on("message", (message) => {
