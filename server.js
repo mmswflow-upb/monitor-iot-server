@@ -225,13 +225,17 @@ wss.on("connection", async (ws, req) => {
   ws.on("message", (content) => {
     content = JSON.parse(content);
 
+    //Device updated its state, so it must be sent to the user
+    if (content["type"] === "pong") {
+      return;
+    }
+
     if (clientType === "user") {
       //User is updating the state of a device
       if (content["deviceId"] && content["data"]) {
         redisPublisher.publish(userId, content);
       }
     } else if (clientType === "mcu") {
-      //Device updated its state, so it must be sent to the user
       deviceObj = content;
       console.log("Device object updated, publishing to Redis:", deviceObj);
       redisPublisher.publish(userId, JSON.stringify(deviceObj));
