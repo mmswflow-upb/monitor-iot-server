@@ -212,7 +212,7 @@ wss.on("connection", async (ws, req) => {
 
   // Handle incoming WebSocket messages
   ws.on("message", (content) => {
-    console.log(`Received message from user ${userId}:`, content);
+    console.log(`Received content from client ${userId}:`, content);
 
     content = JSON.parse(content);
 
@@ -224,6 +224,7 @@ wss.on("connection", async (ws, req) => {
     } else if (clientType === "mcu") {
       //Device updated its state, so it must be sent to the user
       deviceObj = content;
+      console.log("Device object updated, publishing to Redis:", deviceObj);
       redisPublisher.publish(userId, JSON.stringify(deviceObj));
     }
   });
@@ -255,7 +256,7 @@ wss.on("connection", async (ws, req) => {
     } else {
       ws.close(1008, "Device on other end is not responding");
     }
-  }, 50000); // Send a ping every 50 seconds (below Heroku's 55-second timeout)
+  }, 10000); // Send a ping every 10 seconds (below Heroku's 55-second timeout)
 
   // Clear the keep-alive interval on WebSocket closure
   ws.on("close", () => {
