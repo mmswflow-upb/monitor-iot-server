@@ -174,29 +174,6 @@ wss.on("connection", async (ws, req) => {
     redisPublisher.publish(userId, JSON.stringify(deviceObj));
   }
 
-  // Handle incoming WebSocket messages
-  ws.on("message", (content) => {
-    content = JSON.parse(content);
-
-    //Device updated its state, so it must be sent to the user
-    if (content["type"] === "pong") {
-      return;
-    }
-
-    if (clientType === "user") {
-      //User is updating the state of a device
-
-      if (content["deviceId"] && content["data"]) {
-        console.log("USER UPDATING DEVICE OBJECT: ", content);
-        redisPublisher.publish(userId, content);
-      }
-    } else if (clientType === "mcu") {
-      deviceObj = content;
-      console.log("DEVICE UPDATED ITS OBJECT, publishing to Redis:", deviceObj);
-      redisPublisher.publish(userId, JSON.stringify(deviceObj));
-    }
-  });
-
   // Handle WebSocket closure
   ws.on("close", () => {
     console.log(`WebSocket connection closed for user ${userId}`);
@@ -219,62 +196,98 @@ wss.on("connection", async (ws, req) => {
     }
   });
 
-  //Handle incoming messages from Redis channel
-  redisSubscriber.on("message", async (incomingUserId, content) => {
-    //Check if the incoming message is for the current connected client
+  // WebSocket message handling
+  ws.on("message", (content) => {
+    content = JSON.parse(content);
 
+    //Device updated its state, so it must be sent to the user
+    if (content["type"] === "pong") {
+      return;
+    }
+
+    if (clientType === "user") {
+      // User is updating the state of a device
+      if (content["deviceId"] && content["data"]) {
+        console.log("USER UPDATING DEVICE OBJECT: ", content);
+
+        // Adding message type as updateDevice
+        const messageContent = {
+          ...content,
+          messageType: "updateDevice", // Marking the type of the message
+        };
+        redisPublisher.publish(userId, JSON.stringify(messageContent));
+      }
+    } else if (clientType === "mcu") {
+      deviceObj = content;
+      console.log("DEVICE UPDATED ITS OBJECT, publishing to Redis:", deviceObj);
+
+      // Adding message type as updateDevice
+      const messageContent = {
+        ...deviceObj,
+        messageType: "updateDevice", // Marking the type of the message
+      };
+      redisPublisher.publish(userId, JSON.stringify(messageContent));
+    }
+  });
+
+  // Handling Redis messages with added messageType
+  redisSubscriber.on("message", async (incomingUserId, content) => {
     if (userId != incomingUserId) {
       return;
     }
 
-    //Current connected client is a user or device
-    if (clientType === "user") {
-      console.log("USER RECEIVED content from Redis: ", content);
-      //Device disconnected, so it must be removed from the list of connected devices
-      if (content["removeDevice"] && content["deviceId"]) {
-        connectedDevices.delete(content["deviceId"]);
-        console.log("USER: DELETING device with ID: ", content["deviceId"]);
-      } else {
-        //Device connected or updated its state, so we updated the list of connected devices
-        if (
-          content["deviceId"] &&
-          content["deviceName"] &&
-          content["deviceType"]
-        ) {
-          connectedDevices.set(content["deviceId"], content);
-          console.log(
-            "USER: UPDATING connected device: ",
-            content["deviceName"]
-          );
+    // Parse the content to check message type
+    const parsedContent = JSON.parse(content);
 
-          //Send list of connected devices to user through socket
-          if (sockets.has(token)) {
-            console.log("USER: Sending list of connected devices to user");
-            sockets[token].send(
-              JSON.stringify({ devices: Array.from(connectedDevices.values()) })
-            );
-          }
+    // Check for messageType and handle accordingly
+    if (clientType === "user") {
+      console.log("USER RECEIVED content from Redis: ", parsedContent);
+      if (
+        parsedContent["messageType"] === "removeDevice" &&
+        parsedContent["deviceId"]
+      ) {
+        connectedDevices.delete(parsedContent["deviceId"]);
+        console.log(
+          "USER: DELETING device with ID: ",
+          parsedContent["deviceId"]
+        );
+      } else if (
+        parsedContent["messageType"] === "updateDevice" &&
+        parsedContent["deviceId"]
+      ) {
+        connectedDevices.set(parsedContent["deviceId"], parsedContent);
+        console.log(
+          "USER: UPDATING connected device: ",
+          parsedContent["deviceName"]
+        );
+
+        // Send list of connected devices to user through socket
+        if (sockets.has(token)) {
+          console.log("USER: Sending list of connected devices to user");
+          sockets.get(token).send(
+            JSON.stringify({
+              devices: Array.from(connectedDevices.values()),
+              messageType: "updateDevice", // Marking the type of the message
+            })
+          );
         }
       }
     } else if (clientType === "mcu") {
-      //User requested all connected devices to return their device objects
-      if (content === "getDevices") {
+      console.log("MCU: RECEIVED content from Redis: ", parsedContent);
+      if (parsedContent["messageType"] === "getDevices") {
         redisPublisher.publish(userId, JSON.stringify(deviceObj));
         console.log(
           "DEVICE: USER REQUESTED device objects, sending device object: ",
           deviceObj["deviceName"]
         );
-      } else {
-        console.log("MCU: RECEIVED content from Redis: ", content);
-        //Send the device object back to MCU (the state of device is getting updated)
-        if (content["deviceId"]) {
-          if (content["deviceId"] == deviceObj["deviceId"]) {
-            deviceObj["data"] = content["data"];
-            if (sockets.has(token)) {
-              console.log("MCU: Sending updated device object to MCU");
-              sockets[token].send(JSON.stringify(deviceObj));
-            }
-          }
+      } else if (
+        parsedContent["messageType"] === "updateDevice" &&
+        parsedContent["deviceId"] === deviceObj["deviceId"]
+      ) {
+        deviceObj["data"] = parsedContent["data"];
+        if (sockets.has(token)) {
+          console.log("MCU: Sending updated device object to MCU");
+          sockets.get(token).send(JSON.stringify(deviceObj));
         }
       }
     }
@@ -287,9 +300,9 @@ wss.on("connection", async (ws, req) => {
     if (ws.readyState === WebSocket.OPEN) {
       if (sockets.has(token)) {
         console.log("Sending ping to keep connection alive");
-        sockets[token].send(
-          JSON.stringify({ type: "ping", message: "keep-alive" })
-        );
+        sockets
+          .get(token)
+          .send(JSON.stringify({ type: "ping", message: "keep-alive" }));
       }
       // Start a timeout to wait for pong
       pingTimeout = setTimeout(() => {
