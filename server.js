@@ -135,7 +135,7 @@ wss.on("connection", async (ws, req) => {
   if (clientType === "user") {
     //Request devices to send their device objects
 
-    redisSubscriber.subscribe(userId, (err) => {
+    await redisSubscriber.subscribe(userId, (err) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
@@ -151,15 +151,15 @@ wss.on("connection", async (ws, req) => {
 
     deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, {});
 
-    redisPublisher.publish(userId, JSON.stringify(deviceObj));
-
-    redisSubscriber.subscribe(userId, (err) => {
+    await redisSubscriber.subscribe(userId, (err) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
         console.log(`${deviceName} subbed to Redis channel`);
       }
     });
+
+    redisPublisher.publish(userId, JSON.stringify(deviceObj));
   }
 
   //Handle incoming messages from Redis channel
@@ -266,36 +266,36 @@ wss.on("connection", async (ws, req) => {
   });
 
   // Set up a keep-alive interval and handle ping/pong
-  let pingTimeout;
+  //let pingTimeout;
 
-  const sendPing = () => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
+  // const sendPing = () => {
+  //   if (ws.readyState === WebSocket.OPEN) {
+  //     ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
 
-      // Start a timeout to wait for pong
-      pingTimeout = setTimeout(() => {
-        redisSubscriber.unsubscribe(userId);
-        ws.close(); // Close the connection if pong is not received in time
-      }, 10000); // Wait 10 seconds for the pong
-    }
-  };
+  //     // Start a timeout to wait for pong
+  //     pingTimeout = setTimeout(() => {
+  //       redisSubscriber.unsubscribe(userId);
+  //       ws.close(); // Close the connection if pong is not received in time
+  //     }, 10000); // Wait 10 seconds for the pong
+  //   }
+  // };
 
-  // Set an interval to send ping every 50 seconds
-  const interval = setInterval(sendPing, 10000); // Send a ping every 50 seconds
+  // // Set an interval to send ping every 50 seconds
+  // const interval = setInterval(sendPing, 50000); // Send a ping every 50 seconds
 
-  // Handle incoming pong responses
-  ws.on("message", (message) => {
-    const content = JSON.parse(message);
-    if (content.type === "pong") {
-      clearTimeout(pingTimeout); // Clear the timeout if pong is received
-    }
-  });
+  // // Handle incoming pong responses
+  // ws.on("message", (message) => {
+  //   const content = JSON.parse(message);
+  //   if (content.type === "pong") {
+  //     clearTimeout(pingTimeout); // Clear the timeout if pong is received
+  //   }
+  // });
 
-  // Clear the keep-alive interval on WebSocket closure
-  ws.on("close", () => {
-    clearInterval(interval);
-    clearTimeout(pingTimeout); // Clear any existing timeout
-  });
+  // // Clear the keep-alive interval on WebSocket closure
+  // ws.on("close", () => {
+  //   clearInterval(interval);
+  //   clearTimeout(pingTimeout); // Clear any existing timeout
+  // });
 });
 
 //Receives socket and data as object then applies json stringify to data and sends it through the socket
