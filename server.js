@@ -137,12 +137,12 @@ wss.on("connection", async (ws, req) => {
     //Request devices to send their device objects
 
     //Check if the user is already connected
-    if (!sockets.get(token)) {
+    if (!sockets.has(token)) {
       sockets.set(token, ws);
       console.log("USER: ADDED SOCKET TO MAP");
     }
 
-    redisSubscriber.subscribe(userId, (err) => {
+    await redisSubscriber.subscribe(userId, (err) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
@@ -156,14 +156,14 @@ wss.on("connection", async (ws, req) => {
       return;
     }
 
-    if (!sockets.get(token)) {
+    if (!sockets.has(token)) {
       console.log("MCU: ADDED SOCKET TO MAP");
       sockets.set(token, ws);
     }
 
     deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, {});
 
-    redisSubscriber.subscribe(userId, (err) => {
+    await redisSubscriber.subscribe(userId, (err) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
@@ -248,7 +248,7 @@ wss.on("connection", async (ws, req) => {
           );
 
           //Send list of connected devices to user through socket
-          if (sockets[token] != null) {
+          if (sockets.has(token)) {
             console.log("USER: Sending list of connected devices to user");
             sockets[token].send(
               JSON.stringify({ devices: Array.from(connectedDevices.values()) })
@@ -270,7 +270,7 @@ wss.on("connection", async (ws, req) => {
         if (content["deviceId"]) {
           if (content["deviceId"] == deviceObj["deviceId"]) {
             deviceObj["data"] = content["data"];
-            if (sockets[token] != null) {
+            if (sockets.has(token)) {
               console.log("MCU: Sending updated device object to MCU");
               sockets[token].send(JSON.stringify(deviceObj));
             }
@@ -285,7 +285,7 @@ wss.on("connection", async (ws, req) => {
 
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      if (sockets[token] != null) {
+      if (sockets.has(token)) {
         console.log("Sending ping to keep connection alive");
         sockets[token].send(
           JSON.stringify({ type: "ping", message: "keep-alive" })
