@@ -171,7 +171,7 @@ wss.on("connection", async (ws, req) => {
     //Check if the incoming message is for the current connected client
 
     console.log("Incoming message from Redis:", incomingUserId, content);
-    console.log("Current connected client:", userId);
+    console.log("Current connected client:", clientType);
 
     if (userId != incomingUserId) {
       return;
@@ -263,7 +263,8 @@ wss.on("connection", async (ws, req) => {
 
       // Start a timeout to wait for pong
       pingTimeout = setTimeout(() => {
-        console.log("No pong received, closing the connection");
+        console.log("No pong received, closing the connection & unsubscribing");
+        redisSubscriber.unsubscribe(userId);
         ws.close(); // Close the connection if pong is not received in time
       }, 10000); // Wait 10 seconds for the pong
     }
