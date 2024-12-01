@@ -151,7 +151,7 @@ wss.on("connection", async (ws, req) => {
       console.log("USER: ADDED SOCKET TO MAP");
     }
 
-    await redisSubscriber.subscribe(userId, (err) => {
+    redisSubscriber.subscribe(userId, (err) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
@@ -169,7 +169,7 @@ wss.on("connection", async (ws, req) => {
 
     deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, {});
 
-    await redisSubscriber.subscribe(userId, (err) => {
+    redisSubscriber.subscribe(userId, (err) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
