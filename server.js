@@ -144,7 +144,7 @@ wss.on("connection", async (ws, req) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
-        console.log(`\nUser subbed to Redis channel`);
+        console.log(`USER: subbed to Redis channel`);
       }
     });
   } else if (clientType === "mcu") {
@@ -179,7 +179,7 @@ wss.on("connection", async (ws, req) => {
       //Device disconnected, so it must be removed from the list of connected devices
       if (content["removeDevice"] && content["deviceId"]) {
         connectedDevices.delete(content["deviceId"]);
-        console.log("\nUSER: DELETING device with ID: ", content["deviceId"]);
+        console.log("USER: DELETING device with ID: ", content["deviceId"]);
       } else {
         //Device connected or updated its state, so we updated the list of connected devices
         if (
@@ -189,7 +189,7 @@ wss.on("connection", async (ws, req) => {
         ) {
           connectedDevices.set(content["deviceId"], content);
           console.log(
-            "\nUSER: UPDATING list of connected devices: ",
+            "USER: UPDATING list of connected devices: ",
             content["deviceName"]
           );
 
@@ -205,11 +205,11 @@ wss.on("connection", async (ws, req) => {
       if (content === "getDevices") {
         redisPublisher.publish(userId, JSON.stringify(deviceObj));
         console.log(
-          "\nUSER: REQUESTED device objects, sending device object: ",
+          "USER: REQUESTED device objects, sending device object: ",
           deviceObj["deviceName"]
         );
       } else {
-        console.log("\nMCU: RECEIVED content from Redis: ", content);
+        console.log("MCU: RECEIVED content from Redis: ", content);
         //Send the device object back to MCU (the state of device is getting updated)
         if (content["deviceId"]) {
           if (content["deviceId"] == deviceObj["deviceId"]) {
@@ -266,11 +266,9 @@ wss.on("connection", async (ws, req) => {
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
-      console.log("Ping sent");
 
       // Start a timeout to wait for pong
       pingTimeout = setTimeout(() => {
-        console.log("No pong received, closing the connection & unsubscribing");
         redisSubscriber.unsubscribe(userId);
         ws.close(); // Close the connection if pong is not received in time
       }, 10000); // Wait 10 seconds for the pong
@@ -284,7 +282,6 @@ wss.on("connection", async (ws, req) => {
   ws.on("message", (message) => {
     const content = JSON.parse(message);
     if (content.type === "pong") {
-      console.log("Pong received");
       clearTimeout(pingTimeout); // Clear the timeout if pong is received
     }
   });
