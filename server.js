@@ -225,6 +225,63 @@ wss.on("connection", async (ws, req) => {
     }
   });
 
+  //Handle incoming messages from Redis channel
+  redisSubscriber.on("message", async (incomingUserId, content) => {
+    //Check if the incoming message is for the current connected client
+
+    if (userId != incomingUserId) {
+      return;
+    }
+
+    //Current connected client is a user or device
+    if (clientType === "user") {
+      console.log("USER RECEIVED content from Redis: ", content);
+      //Device disconnected, so it must be removed from the list of connected devices
+      if (content["removeDevice"] && content["deviceId"]) {
+        connectedDevices.delete(content["deviceId"]);
+        console.log("USER: DELETING device with ID: ", content["deviceId"]);
+      } else {
+        //Device connected or updated its state, so we updated the list of connected devices
+        if (
+          content["deviceId"] &&
+          content["deviceName"] &&
+          content["deviceType"]
+        ) {
+          connectedDevices.set(content["deviceId"], content);
+          console.log(
+            "USER: UPDATING connected device: ",
+            content["deviceName"]
+          );
+
+          //Send list of connected devices to user through socket
+
+          await sendDataThruSocket(
+            token,
+            JSON.stringify({ devices: Array.from(connectedDevices.values()) })
+          );
+        }
+      }
+    } else if (clientType === "mcu") {
+      //User requested all connected devices to return their device objects
+      if (content === "getDevices") {
+        redisPublisher.publish(userId, JSON.stringify(deviceObj));
+        console.log(
+          "DEVICE: USER REQUESTED device objects, sending device object: ",
+          deviceObj["deviceName"]
+        );
+      } else {
+        console.log("MCU: RECEIVED content from Redis: ", content);
+        //Send the device object back to MCU (the state of device is getting updated)
+        if (content["deviceId"]) {
+          if (content["deviceId"] == deviceObj["deviceId"]) {
+            deviceObj["data"] = content["data"];
+            await sendDataThruSocket(token, deviceObj);
+          }
+        }
+      }
+    }
+  });
+
   //Set up a keep-alive interval and handle ping/pong
   let pingTimeout;
 
@@ -257,60 +314,6 @@ wss.on("connection", async (ws, req) => {
     clearInterval(interval);
     clearTimeout(pingTimeout); // Clear any existing timeout
   });
-});
-
-//Handle incoming messages from Redis channel
-redisSubscriber.on("message", async (incomingUserId, content) => {
-  //Check if the incoming message is for the current connected client
-
-  if (userId != incomingUserId) {
-    return;
-  }
-
-  //Current connected client is a user or device
-  if (clientType === "user") {
-    console.log("USER RECEIVED content from Redis: ", content);
-    //Device disconnected, so it must be removed from the list of connected devices
-    if (content["removeDevice"] && content["deviceId"]) {
-      connectedDevices.delete(content["deviceId"]);
-      console.log("USER: DELETING device with ID: ", content["deviceId"]);
-    } else {
-      //Device connected or updated its state, so we updated the list of connected devices
-      if (
-        content["deviceId"] &&
-        content["deviceName"] &&
-        content["deviceType"]
-      ) {
-        connectedDevices.set(content["deviceId"], content);
-        console.log("USER: UPDATING connected device: ", content["deviceName"]);
-
-        //Send list of connected devices to user through socket
-
-        await sendDataThruSocket(
-          token,
-          JSON.stringify({ devices: Array.from(connectedDevices.values()) })
-        );
-      }
-    }
-  } else if (clientType === "mcu") {
-    //User requested all connected devices to return their device objects
-    if (content === "getDevices") {
-      redisPublisher.publish(userId, JSON.stringify(deviceObj));
-      console.log(
-        "DEVICE: USER REQUESTED device objects, sending device object: ",
-        deviceObj["deviceName"]
-      );
-    } else {
-      console.log("MCU: RECEIVED content from Redis: ", content);
-      //Send the device object back to MCU (the state of device is getting updated)
-      if (content["deviceId"]) {
-        if (content["deviceId"] == deviceObj["deviceId"]) {
-          deviceObj["data"] = content["data"];
-          await sendDataThruSocket(token, deviceObj);
-        }
-      }
-    }
-  }
 });
 
 //Receives socket and data as object then applies json stringify to data and sends it through the socket
