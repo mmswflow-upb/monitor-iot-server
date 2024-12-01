@@ -169,6 +169,10 @@ wss.on("connection", async (ws, req) => {
   //Handle incoming messages from Redis channel
   redisSubscriber.on("message", (incomingUserId, content) => {
     //Check if the incoming message is for the current connected client
+
+    console.log("Incoming message from Redis:", incomingUserId, content);
+    console.log("Current connected client:", userId);
+
     if (userId != incomingUserId) {
       return;
     }
