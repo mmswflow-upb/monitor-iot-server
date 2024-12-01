@@ -248,6 +248,7 @@ wss.on("connection", async (ws, req) => {
 
           //Send list of connected devices to user through socket
           if (sockets[token]) {
+            console.log("USER: Sending list of connected devices to user");
             sockets[token].send(
               JSON.stringify({ devices: Array.from(connectedDevices.values()) })
             );
@@ -269,6 +270,7 @@ wss.on("connection", async (ws, req) => {
           if (content["deviceId"] == deviceObj["deviceId"]) {
             deviceObj["data"] = content["data"];
             if (sockets[token]) {
+              console.log("MCU: Sending updated device object to MCU");
               sockets[token].send(JSON.stringify(deviceObj));
             }
           }
@@ -283,6 +285,7 @@ wss.on("connection", async (ws, req) => {
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
       if (sockets[token]) {
+        console.log("Sending ping to keep connection alive");
         sockets[token].send(
           JSON.stringify({ type: "ping", message: "keep-alive" })
         );
