@@ -172,6 +172,7 @@ wss.on("connection", async (ws, req) => {
 
     //Current connected client is a user or device
     if (clientType === "user") {
+      console.log("USER RECEIVED content from Redis: ", content);
       //Device disconnected, so it must be removed from the list of connected devices
       if (content["removeDevice"] && content["deviceId"]) {
         connectedDevices.delete(content["deviceId"]);
