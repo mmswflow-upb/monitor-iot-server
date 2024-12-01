@@ -282,7 +282,7 @@ wss.on("connection", async (ws, req) => {
 
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      if (!sockets[token]) {
+      if (sockets[token]) {
         sockets[token].send(
           JSON.stringify({ type: "ping", message: "keep-alive" })
         );
