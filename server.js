@@ -126,10 +126,6 @@ wss.on("connection", async (ws, req) => {
     return;
   }
 
-  console.log(
-    `\nWebSocket connection established for clien-type: ${clientType}`
-  );
-
   //When user/device first connects, users have to populate a list of connected devices,
   //devices have to subscribe to the pub/sub channels and send their device objects
   const deviceId = url.searchParams.get("deviceId");
@@ -167,7 +163,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   //Handle incoming messages from Redis channel
-  redisSubscriber.on("message", (incomingUserId, content) => {
+  redisSubscriber.on("message", async (incomingUserId, content) => {
     //Check if the incoming message is for the current connected client
 
     if (userId != incomingUserId) {
@@ -189,12 +185,12 @@ wss.on("connection", async (ws, req) => {
         ) {
           connectedDevices.set(content["deviceId"], content);
           console.log(
-            "USER: UPDATING list of connected devices: ",
+            "USER: UPDATING connected device: ",
             content["deviceName"]
           );
 
           //Send list of connected devices to user through socket
-          sendDataThruSocket(
+          await sendDataThruSocket(
             ws,
             JSON.stringify({ devices: Array.from(connectedDevices.values()) })
           );
@@ -214,7 +210,7 @@ wss.on("connection", async (ws, req) => {
         if (content["deviceId"]) {
           if (content["deviceId"] == deviceObj["deviceId"]) {
             deviceObj["data"] = content["data"];
-            sendDataThruSocket(ws, deviceObj);
+            await sendDataThruSocket(ws, deviceObj);
           }
         }
       }
@@ -232,12 +228,14 @@ wss.on("connection", async (ws, req) => {
 
     if (clientType === "user") {
       //User is updating the state of a device
+
       if (content["deviceId"] && content["data"]) {
+        console.log("USER UPDATING DEVICE OBJECT: ", content);
         redisPublisher.publish(userId, content);
       }
     } else if (clientType === "mcu") {
       deviceObj = content;
-      console.log("Device object updated, publishing to Redis:", deviceObj);
+      console.log("DEVICE UPDATED ITS OBJECT, publishing to Redis:", deviceObj);
       redisPublisher.publish(userId, JSON.stringify(deviceObj));
     }
   });
@@ -296,8 +294,8 @@ wss.on("connection", async (ws, req) => {
 });
 
 //Receives socket and data as object then applies json stringify to data and sends it through the socket
-function sendDataThruSocket(socket, data) {
-  console.log("Sending data through socket:", data);
+async function sendDataThruSocket(socket, data) {
+  console.log("SENDING DATA THRU SOCKET:", data);
   if (socket.readyState === WebSocket.OPEN) {
     try {
       socket.send(JSON.stringify(data));
