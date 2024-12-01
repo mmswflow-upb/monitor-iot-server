@@ -96,8 +96,6 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const connectedDevices = new Map(); // Store connected devices as objects
 
-var deviceObj = {};
-
 // WebSocket authentication
 async function authenticateConnection(token) {
   try {
@@ -112,18 +110,11 @@ async function authenticateConnection(token) {
 //Store sockets associated with tokens
 const sockets = new Map();
 
-var userId;
-var clientType;
-var deviceId;
-var deviceName;
-var deviceType;
-var token;
-
 wss.on("connection", async (ws, req) => {
   const url = new URL(`http://${req.headers.host}${req.url}`);
-  token = url.searchParams.get("token");
-  userId = url.searchParams.get("userId");
-  clientType = url.searchParams.get("type");
+  const token = url.searchParams.get("token");
+  const userId = url.searchParams.get("userId");
+  const clientType = url.searchParams.get("type");
 
   if (!token || !userId || !clientType) {
     ws.close(1008, "Unauthorized: Missing token, userId, or client type");
@@ -138,9 +129,9 @@ wss.on("connection", async (ws, req) => {
 
   //When user/device first connects, users have to populate a list of connected devices,
   //devices have to subscribe to the pub/sub channels and send their device objects
-  deviceId = url.searchParams.get("deviceId");
-  deviceName = url.searchParams.get("deviceName");
-  deviceType = url.searchParams.get("deviceType");
+  const deviceId = url.searchParams.get("deviceId");
+  const deviceName = url.searchParams.get("deviceName");
+  const deviceType = url.searchParams.get("deviceType");
 
   if (clientType === "user") {
     //Request devices to send their device objects
@@ -255,7 +246,7 @@ wss.on("connection", async (ws, req) => {
 
           //Send list of connected devices to user through socket
 
-          ws.send(
+          sockets[token].send(
             JSON.stringify({ devices: Array.from(connectedDevices.values()) })
           );
         }
@@ -274,7 +265,7 @@ wss.on("connection", async (ws, req) => {
         if (content["deviceId"]) {
           if (content["deviceId"] == deviceObj["deviceId"]) {
             deviceObj["data"] = content["data"];
-            ws.send(JSON.stringify(deviceObj));
+            sockets[token].send(JSON.stringify(deviceObj));
           }
         }
       }
@@ -286,7 +277,9 @@ wss.on("connection", async (ws, req) => {
 
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
+      sockets[token].send(
+        JSON.stringify({ type: "ping", message: "keep-alive" })
+      );
 
       // Start a timeout to wait for pong
       pingTimeout = setTimeout(() => {
