@@ -135,7 +135,6 @@ wss.on("connection", async (ws, req) => {
   if (clientType === "user") {
     //Request devices to send their device objects
 
-    redisPublisher.publish(userId, "getDevices");
     redisSubscriber.subscribe(userId, (err) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
@@ -143,6 +142,7 @@ wss.on("connection", async (ws, req) => {
         console.log(`USER: subbed to Redis channel`);
       }
     });
+    redisPublisher.publish(userId, "getDevices");
   } else if (clientType === "mcu") {
     if (!deviceId || !deviceName || !deviceType) {
       ws.close(1008, "Unauthorized: Missing deviceId, deviceName, deviceType");
