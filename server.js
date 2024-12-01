@@ -156,7 +156,9 @@ wss.on("connection", async (ws, req) => {
       return;
     }
 
-    sockets.set(token, ws);
+    if (!sockets.get(token)) {
+      sockets.set(token, ws);
+    }
 
     deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, {});
 
@@ -245,10 +247,11 @@ wss.on("connection", async (ws, req) => {
           );
 
           //Send list of connected devices to user through socket
-
-          sockets[token].send(
-            JSON.stringify({ devices: Array.from(connectedDevices.values()) })
-          );
+          if (sockets[token]) {
+            sockets[token].send(
+              JSON.stringify({ devices: Array.from(connectedDevices.values()) })
+            );
+          }
         }
       }
     } else if (clientType === "mcu") {
@@ -265,7 +268,9 @@ wss.on("connection", async (ws, req) => {
         if (content["deviceId"]) {
           if (content["deviceId"] == deviceObj["deviceId"]) {
             deviceObj["data"] = content["data"];
-            sockets[token].send(JSON.stringify(deviceObj));
+            if (sockets[token]) {
+              sockets[token].send(JSON.stringify(deviceObj));
+            }
           }
         }
       }
@@ -277,10 +282,11 @@ wss.on("connection", async (ws, req) => {
 
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      sockets[token].send(
-        JSON.stringify({ type: "ping", message: "keep-alive" })
-      );
-
+      if (!sockets[token]) {
+        sockets[token].send(
+          JSON.stringify({ type: "ping", message: "keep-alive" })
+        );
+      }
       // Start a timeout to wait for pong
       pingTimeout = setTimeout(() => {
         sockets.delete(token);
