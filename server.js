@@ -252,6 +252,8 @@ wss.on("connection", async (ws, req) => {
   const interval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
+    } else {
+      ws.close(1008, "Device on other end is not responding");
     }
   }, 50000); // Send a ping every 50 seconds (below Heroku's 55-second timeout)
 
