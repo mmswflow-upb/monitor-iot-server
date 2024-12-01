@@ -132,6 +132,10 @@ wss.on("connection", async (ws, req) => {
 
   //When user/device first connects, users have to populate a list of connected devices,
   //devices have to subscribe to the pub/sub channels and send their device objects
+  const deviceId = url.searchParams.get("deviceId");
+  const deviceName = url.searchParams.get("deviceName");
+  const deviceType = url.searchParams.get("deviceType");
+
   if (clientType === "user") {
     //Request devices to send their device objects
 
@@ -144,15 +148,12 @@ wss.on("connection", async (ws, req) => {
       }
     });
   } else if (clientType === "mcu") {
-    if (!deviceId || !deviceName || !deviceType || !data) {
-      ws.close(
-        1008,
-        "Unauthorized: Missing deviceId, deviceName, deviceType, or data"
-      );
+    if (!deviceId || !deviceName || !deviceType) {
+      ws.close(1008, "Unauthorized: Missing deviceId, deviceName, deviceType");
       return;
     }
 
-    deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, data);
+    deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, {});
 
     redisPublisher.publish(userId, JSON.stringify(deviceObj));
 
