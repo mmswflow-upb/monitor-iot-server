@@ -94,7 +94,9 @@ app.post("/login", async (req, res) => {
 // WebSocket server setup
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-const connections = new Map(); // Store connections by userId
+const connectedDevices = new Map(); // Store connected devices as objects
+
+deviceObj = {};
 
 // WebSocket authentication
 async function authenticateConnection(token) {
@@ -128,50 +130,120 @@ wss.on("connection", async (ws, req) => {
     `WebSocket connection established for user ${userId}, type: ${clientType}`
   );
 
-  // Store the connection
-  if (!connections.has(userId)) {
-    connections.set(userId, []);
-  }
-  connections.get(userId).push(ws);
+  //When user/device first connects, users have to populate a list of connected devices,
+  //devices have to subscribe to the pub/sub channels and send their device objects
+  if (clientType === "user") {
+    //Request devices to send their device objects
 
-  // Only subscribe to the Redis channel once per userId
-  if (connections.get(userId).length === 1) {
+    redisPublisher.publish(userId, "getDevices");
     redisSubscriber.subscribe(userId, (err) => {
-      if (err) console.error(`Failed to subscribe to channel ${userId}:`, err);
-      else console.log(`Subscribed to Redis channel for user ${userId}`);
+      if (err) {
+        console.error(`Failed to subscribe to channel ${userId}:`, err);
+      } else {
+        console.log(`User subbed to Redis channel for user ${userId}`);
+      }
+    });
+  } else if (clientType === "mcu") {
+    if (!deviceId || !deviceName || !deviceType || !data) {
+      ws.close(
+        1008,
+        "Unauthorized: Missing deviceId, deviceName, deviceType, or data"
+      );
+      return;
+    }
+
+    deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, data);
+
+    redisPublisher.publish(userId, JSON.stringify(deviceObj));
+
+    redisSubscriber.subscribe(userId, (err) => {
+      if (err) {
+        console.error(`Failed to subscribe to channel ${userId}:`, err);
+      } else {
+        console.log(`Device subbed to Redis channel for user ${userId}`);
+      }
     });
   }
 
+  //Handle incoming messages from Redis channel
+  redisSubscriber.on("message", (incomingUserId, content) => {
+    //Check if the incoming message is for the current connected client
+    if (userId != incomingUserId) {
+      return;
+    }
+
+    //Current connected client is a user or device
+    if (clientType === "user") {
+      //Device disconnected, so it must be removed from the list of connected devices
+      if (content["removeDevice"] && content["deviceId"]) {
+        connectedDevices.delete(content["deviceId"]);
+      } else {
+        //Device connected or updated its state, so we updated the list of connected devices
+        if (
+          content["deviceId"] &&
+          content["deviceName"] &&
+          content["deviceType"]
+        ) {
+          connectedDevices.set(content["deviceId"], content);
+
+          //Send list of connected devices to user through socket
+          sendDataThruSocket(
+            ws,
+            JSON.stringify({ devices: Array.from(connectedDevices.values()) })
+          );
+        }
+      }
+    } else if (clientType === "mcu") {
+      //User requested all connected devices to return their device objects
+      if (content === "getDevices") {
+        redisPublisher.publish(userId, JSON.stringify(deviceObj));
+      } else {
+        //Send the device object back to MCU (the state of device is getting updated)
+        if (content["deviceId"]) {
+          if (content["deviceId"] == deviceObj["deviceId"]) {
+            deviceObj["data"] = content["data"];
+            sendDataThruSocket(ws, deviceObj);
+          }
+        }
+      }
+    }
+  });
+
   // Handle incoming WebSocket messages
-  ws.on("message", (data) => {
+  ws.on("message", (content) => {
     console.log(`Received message from user ${userId}:`, data);
 
-    try {
-      redisPublisher.publish(userId, JSON.stringify(data)); // Publish the message to the Redis channel
-    } catch (err) {
-      console.error(`Error publishing message to channel ${userId}:`, err);
+    content = JSON.parse(content);
+
+    if (clientType === "user") {
+      //User is updating the state of a device
+      if (content["deviceId"] && content["data"]) {
+        redisPublisher.publish(userId, content);
+      }
+    } else if (clientType === "mcu") {
+      //Device updated its state, so it must be sent to the user
+      deviceObj = content;
+      redisPublisher.publish(userId, JSON.stringify(deviceObj));
     }
   });
 
   // Handle WebSocket closure
   ws.on("close", () => {
     console.log(`WebSocket connection closed for user ${userId}`);
-    const userConnections = connections.get(userId) || [];
 
-    // Remove the closed WebSocket from the connections array
-    const updatedConnections = userConnections.filter(
-      (socket) => socket !== ws
-    );
-    if (updatedConnections.length > 0) {
-      connections.set(userId, updatedConnections);
-    } else {
-      // If no connections remain, clean up the user entry and unsubscribe from Redis
-      connections.delete(userId);
-      redisSubscriber.unsubscribe(userId, (err) => {
-        if (err)
-          console.error(`Failed to unsubscribe from channel ${userId}:`, err);
-        else console.log(`Unsubscribed from Redis channel for user ${userId}`);
-      });
+    // Unsubscribe from Redis channel
+    redisSubscriber.unsubscribe(userId, (err) => {
+      if (err)
+        console.error(`Failed to unsubscribe from channel ${userId}:`, err);
+      else console.log(`Unsubscribed from Redis channel for user ${userId}`);
+    });
+
+    //If a device disconnected, it must be removed from the list of connected devices
+    if (clientType === "mcu") {
+      redisPublisher.publish(
+        userId,
+        JSON.stringify({ removeDevice: true, deviceId: deviceObj["deviceId"] })
+      );
     }
   });
 
@@ -188,18 +260,30 @@ wss.on("connection", async (ws, req) => {
   });
 });
 
-// Global Redis message listener
-redisSubscriber.on("message", (channel, message) => {
-  if (connections.has(channel)) {
-    connections.get(channel).forEach((socket) => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(message); // Send the message to all open WebSocket connections for the user
-      }
-    });
+//Receives socket and data as object then applies json stringify to data and sends it through the socket
+function sendDataThruSocket(socket, data) {
+  if (socket.readyState === WebSocket.OPEN) {
+    try {
+      socket.send(JSON.stringify(data));
+      return true;
+    } catch (err) {
+      console.error("Error sending data through socket:", err);
+    }
   }
-});
+  return false;
+}
 
-// Start server
+// Function to create a device object
+function createDeviceObj(deviceId, userId, deviceName, deviceType, data) {
+  return {
+    deviceId: deviceId,
+    userId: userId,
+    deviceName: deviceName,
+    deviceType: deviceType,
+    data: data,
+  };
+}
+
 server.listen(HTTP_PORT, () => {
   console.log(`Server running on port ${HTTP_PORT}`);
 });
