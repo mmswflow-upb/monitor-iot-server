@@ -96,7 +96,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const connectedDevices = new Map(); // Store connected devices as objects
 
-deviceObj = {};
+var deviceObj = {};
 
 // WebSocket authentication
 async function authenticateConnection(token) {
@@ -255,8 +255,7 @@ wss.on("connection", async (ws, req) => {
 
           //Send list of connected devices to user through socket
 
-          await sendDataThruSocket(
-            token,
+          ws.send(
             JSON.stringify({ devices: Array.from(connectedDevices.values()) })
           );
         }
@@ -275,7 +274,7 @@ wss.on("connection", async (ws, req) => {
         if (content["deviceId"]) {
           if (content["deviceId"] == deviceObj["deviceId"]) {
             deviceObj["data"] = content["data"];
-            await sendDataThruSocket(token, deviceObj);
+            ws.send(JSON.stringify(deviceObj));
           }
         }
       }
@@ -317,19 +316,19 @@ wss.on("connection", async (ws, req) => {
 });
 
 //Receives socket and data as object then applies json stringify to data and sends it through the socket
-async function sendDataThruSocket(token, data) {
-  console.log("SENDING DATA THRU SOCKET:", data);
-  socket = sockets.get(token);
-  if (socket.readyState === WebSocket.OPEN) {
-    try {
-      socket.send(JSON.stringify(data));
-      return true;
-    } catch (err) {
-      console.error("Error sending data through socket:", err);
-    }
-  }
-  return false;
-}
+// async function sendDataThruSocket(token, data) {
+//   console.log("SENDING DATA THRU SOCKET:", data);
+//   socket = sockets.get(token);
+//   if (socket.readyState === WebSocket.OPEN) {
+//     try {
+//       socket.send(JSON.stringify(data));
+//       return true;
+//     } catch (err) {
+//       console.error("Error sending data through socket:", err);
+//     }
+//   }
+//   return false;
+// }
 
 // Function to create a device object
 function createDeviceObj(deviceId, userId, deviceName, deviceType, data) {
