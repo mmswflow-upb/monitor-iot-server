@@ -107,9 +107,6 @@ async function authenticateConnection(token) {
   }
 }
 
-//Store sockets associated with tokens
-const sockets = new Map();
-
 wss.on("connection", async (ws, req) => {
   const url = new URL(`http://${req.headers.host}${req.url}`);
   const token = url.searchParams.get("token");
@@ -137,12 +134,6 @@ wss.on("connection", async (ws, req) => {
   if (clientType === "user") {
     //Request devices to send their device objects
 
-    //Check if the user is already connected
-    if (!sockets.has(token)) {
-      sockets.set(token, ws);
-      console.log("USER: ADDED SOCKET TO MAP");
-    }
-
     await redisSubscriber.subscribe(userId, (err) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
@@ -158,11 +149,6 @@ wss.on("connection", async (ws, req) => {
     if (!deviceId || !deviceName || !deviceType) {
       ws.close(1008, "Unauthorized: Missing deviceId, deviceName, deviceType");
       return;
-    }
-
-    if (!sockets.has(deviceId)) {
-      console.log("MCU: ADDED SOCKET TO MAP");
-      sockets.set(deviceId, ws);
     }
 
     deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, {});
@@ -204,7 +190,7 @@ wss.on("connection", async (ws, req) => {
         );
 
         // Optionally, send updated device list to the user
-        if (sockets.has(token)) {
+        if (ws.readyState === WebSocket.OPEN) {
           console.log(
             "USER: Sending updated list of connected devices to user"
           );
@@ -232,7 +218,7 @@ wss.on("connection", async (ws, req) => {
         );
 
         // Send updated list of connected devices to the user
-        if (sockets.has(token)) {
+        if (ws.readyState === WebSocket.OPEN) {
           console.log(
             "USER: Sending updated list of connected devices to user"
           );
@@ -271,7 +257,7 @@ wss.on("connection", async (ws, req) => {
         console.log("MCU: Updated device object");
 
         // If the socket exists, send the updated device object to the MCU
-        if (sockets.has(deviceId)) {
+        if (ws.readyState === WebSocket.OPEN) {
           console.log("MCU: Sending updated device object to MCU");
           ws.send(JSON.stringify(deviceObj));
         }
@@ -280,7 +266,7 @@ wss.on("connection", async (ws, req) => {
         userId === parsedContent["userId"]
       ) {
         console.log("MCU: USER STOPPED");
-        if (sockets.has(deviceId)) {
+        if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ messageType: "userDisconnected" }));
         }
       }
@@ -293,7 +279,7 @@ wss.on("connection", async (ws, req) => {
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
       const socketId = clientType === "user" ? token : deviceId;
-      if (sockets.has(socketId)) {
+      if (ws.readyState === WebSocket.OPEN) {
         console.log("Sending ping to keep connection alive");
         ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
       }
@@ -317,8 +303,7 @@ wss.on("connection", async (ws, req) => {
             })
           );
         }
-        sockets.get(socketId).close();
-        sockets.delete(socketId);
+
         redisSubscriber.unsubscribe(userId);
         ws.close();
         // Close the connection if pong is not received in time
@@ -375,11 +360,6 @@ wss.on("connection", async (ws, req) => {
     clearInterval(interval);
     clearTimeout(pingTimeout); // Clear any existing timeout
 
-    if (clientType === "mcu") {
-      sockets.delete(deviceId);
-    } else {
-      sockets.delete(token);
-    }
     // Unsubscribe from Redis channel
     redisSubscriber.unsubscribe(userId, (err) => {
       if (err)
@@ -399,12 +379,13 @@ wss.on("connection", async (ws, req) => {
     } else if (clientType === "user") {
       redisPublisher.publish(
         userId,
-        JSON.stringify({ messageType: "userDisconnected", userId: userId })
+        JSON.stringify({
+          messageType: "userDisconnected",
+          userId: userId,
+        })
       );
     }
   });
-  // Clear the keep-alive interval on WebSocket closure
-  ws.on("close", () => {});
 });
 
 // Function to create a device object
