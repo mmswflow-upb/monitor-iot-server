@@ -101,7 +101,7 @@ async function authenticateConnection(token) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const user = await User.findById(decoded.id);
-    return user | null;
+    return user;
   } catch (error) {
     return null;
   }
