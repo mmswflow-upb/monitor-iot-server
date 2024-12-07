@@ -358,6 +358,7 @@ wss.on("connection", async (ws, req) => {
       }
       // Start a timeout to wait for pong
       pingTimeout = setTimeout(() => {
+        console.log("Closing connection due to no pong received");
         if (clientType === "mcu") {
           redisPublisher.publish(
             userId,
@@ -375,9 +376,11 @@ wss.on("connection", async (ws, req) => {
             })
           );
         }
+        sockets.get(token).close();
         sockets.delete(token);
         redisSubscriber.unsubscribe(userId);
-        ws.close(); // Close the connection if pong is not received in time
+        ws.close();
+        // Close the connection if pong is not received in time
       }, 10000); // Wait 10 seconds for the pong
     }
   };
