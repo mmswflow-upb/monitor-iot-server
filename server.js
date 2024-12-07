@@ -262,10 +262,7 @@ wss.on("connection", async (ws, req) => {
           console.log("MCU: Sending updated device object to MCU");
           ws.send(JSON.stringify(deviceObj));
         }
-      } else if (
-        parsedContent["messageType"] === "userDisconnected" &&
-        userId === parsedContent["userId"]
-      ) {
+      } else if (parsedContent["messageType"] === "userDisconnected") {
         console.log("MCU: USER STOPPED");
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ messageType: "userDisconnected" }));
@@ -351,7 +348,7 @@ wss.on("connection", async (ws, req) => {
   });
 
   // Handle WebSocket closure
-  ws.on("close", () => {
+  ws.on("close", async () => {
     console.log(
       `WebSocket connection closed for ${clientType} ${
         deviceId === null ? userId : deviceId
@@ -370,6 +367,7 @@ wss.on("connection", async (ws, req) => {
 
     //If a device disconnected, it must be removed from the list of connected devices
     if (clientType === "mcu") {
+      console.log("DEVICE: DISCONNECTED");
       redisPublisher.publish(
         userId,
         JSON.stringify({
@@ -378,6 +376,7 @@ wss.on("connection", async (ws, req) => {
         })
       );
     } else if (clientType === "user") {
+      console.log("USER: DISCONNECTED");
       redisPublisher.publish(
         userId,
         JSON.stringify({
