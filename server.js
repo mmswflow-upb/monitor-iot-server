@@ -354,7 +354,7 @@ wss.on("connection", async (ws, req) => {
           redisPublisher.publish(
             userId,
             JSON.stringify({
-              removeDevice: true,
+              messageType: "removeDevice",
               deviceId: deviceObj["deviceId"],
             })
           );
