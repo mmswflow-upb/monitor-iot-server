@@ -281,7 +281,7 @@ wss.on("connection", async (ws, req) => {
       const socketId = clientType === "user" ? token : deviceId;
       if (ws.readyState === WebSocket.OPEN) {
         console.log("Sending ping to keep connection alive");
-        ws.send(JSON.stringify({ type: "ping", message: "keep-alive" }));
+        ws.send(JSON.stringify({ messageType: "ping", message: "keep-alive" }));
       }
       // Start a timeout to wait for pong
       pingTimeout = setTimeout(() => {
