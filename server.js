@@ -203,7 +203,7 @@ wss.on("connection", async (ws, req) => {
         userId,
         JSON.stringify({ removeDevice: true, deviceId: deviceObj["deviceId"] })
       );
-    } else if (client === "user") {
+    } else if (clientType === "user") {
       redisPublisher.publish(
         userId,
         JSON.stringify({ messageType: "userDisconnected", userId: userId })
