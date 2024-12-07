@@ -160,9 +160,9 @@ wss.on("connection", async (ws, req) => {
       return;
     }
 
-    if (!sockets.has(token)) {
+    if (!sockets.has(deviceId)) {
       console.log("MCU: ADDED SOCKET TO MAP");
-      sockets.set(token, ws);
+      sockets.set(deviceId, ws);
     }
 
     deviceObj = createDeviceObj(deviceId, userId, deviceName, deviceType, {});
@@ -185,8 +185,11 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", () => {
     console.log(`WebSocket connection closed for user ${userId}`);
 
-    sockets.delete(token);
-
+    if (clientType === "mcu") {
+      sockets.delete(deviceId);
+    } else {
+      sockets.delete(token);
+    }
     // Unsubscribe from Redis channel
     redisSubscriber.unsubscribe(userId, (err) => {
       if (err)
@@ -215,7 +218,7 @@ wss.on("connection", async (ws, req) => {
     if (clientType === "user") {
       // User is updating the state of a device
       if (content["deviceId"] && content["data"]) {
-        console.log("USER UPDATING DEVICE OBJECT: ", content);
+        console.log("USER UPDATING DEVICE OBJECT: ");
 
         // Adding message type as updateDevice
         const messageContent = {
@@ -327,18 +330,18 @@ wss.on("connection", async (ws, req) => {
         console.log("MCU: Updated device object");
 
         // If the socket exists, send the updated device object to the MCU
-        if (sockets.has(token)) {
+        if (sockets.has(deviceId)) {
           console.log("MCU: Sending updated device object to MCU");
-          sockets.get(token).send(JSON.stringify(deviceObj));
+          sockets.get(deviceId).send(JSON.stringify(deviceObj));
         }
       } else if (
         parsedContent["messageType"] === "userDisconnected" &&
         userId === parsedContent["userId"]
       ) {
         console.log("MCU: USER STOPPED");
-        if (sockets.has(token)) {
+        if (sockets.has(deviceId)) {
           sockets
-            .get(token)
+            .get(deviceId)
             .send(JSON.stringify({ messageType: "userStopped" }));
         }
       }
@@ -350,10 +353,11 @@ wss.on("connection", async (ws, req) => {
 
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      if (sockets.has(token)) {
+      const socketId = clientType === "user" ? token : deviceId;
+      if (sockets.has(socketId)) {
         console.log("Sending ping to keep connection alive");
         sockets
-          .get(token)
+          .get(socketId)
           .send(JSON.stringify({ type: "ping", message: "keep-alive" }));
       }
       // Start a timeout to wait for pong
@@ -376,8 +380,8 @@ wss.on("connection", async (ws, req) => {
             })
           );
         }
-        sockets.get(token).close();
-        sockets.delete(token);
+        sockets.get(socketId).close();
+        sockets.delete(socketId);
         redisSubscriber.unsubscribe(userId);
         ws.close();
         // Close the connection if pong is not received in time
