@@ -119,6 +119,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   const user = await authenticateConnection(token);
+  console.log("User authenticated:", user);
   if (!user || user.id !== userId) {
     ws.close(1008, "Unauthorized: Invalid token or userId mismatch");
     return;
@@ -138,7 +139,7 @@ wss.on("connection", async (ws, req) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
-        console.log(`USER ${userId} subbed to Redis channel`);
+        console.log(`${user.email}: SUBBED to Redis channel`);
       }
     });
     redisPublisher.publish(
@@ -157,7 +158,7 @@ wss.on("connection", async (ws, req) => {
       if (err) {
         console.error(`Failed to subscribe to channel ${userId}:`, err);
       } else {
-        console.log(`${deviceName} subbed to Redis channel`);
+        console.log(`${deviceName}: SUBBED to Redis channel`);
       }
     });
 
@@ -185,13 +186,13 @@ wss.on("connection", async (ws, req) => {
       ) {
         connectedDevices.delete(parsedContent["deviceId"]);
         console.log(
-          `${email} Removing device with ID ${parsedContent["deviceId"]} from connected devices`
+          `${email} REMOVING device with ID ${parsedContent["deviceId"]} from connected devices`
         );
 
         // Optionally, send updated device list to the user
         if (ws.readyState === WebSocket.OPEN) {
           console.log(
-            `${user.email}: Sending updated list of connected devices to user`
+            `${user.email}: SENDING updated list of connected devices to client app`
           );
           ws.send(
             JSON.stringify({
@@ -218,7 +219,7 @@ wss.on("connection", async (ws, req) => {
         // Send updated list of connected devices to the user
         if (ws.readyState === WebSocket.OPEN) {
           console.log(
-            `${user.email}: Sending updated list of connected devices to user`
+            `${user.email}: SENDING updated list of connected devices to client app`
           );
           ws.send(
             JSON.stringify({
@@ -229,7 +230,7 @@ wss.on("connection", async (ws, req) => {
         }
       }
     } else if (clientType === "mcu") {
-      console.log(`${deviceName} Received message from Redis`);
+      console.log(`${deviceName}: RECEIVED message from Redis`);
       // Handle getting devices request
       if (parsedContent["messageType"] === "getDevices") {
         // Publish the device object when requested
@@ -256,7 +257,7 @@ wss.on("connection", async (ws, req) => {
 
         // If the socket exists, send the updated device object to the MCU
         if (ws.readyState === WebSocket.OPEN) {
-          console.log(`${deviceName}: Sending updated device object to MCU`);
+          console.log(`${deviceName}: SENDING updated device object to MCU`);
           ws.send(JSON.stringify(deviceObj));
         }
       } else if (parsedContent["messageType"] === "userDisconnected") {
@@ -324,7 +325,9 @@ wss.on("connection", async (ws, req) => {
     if (clientType === "user") {
       // User is updating the state of a device
       if (content["deviceId"] && content["data"]) {
-        console.log("USER UPDATING DEVICE OBJECT: ");
+        console.log(
+          `${user.email}: UPDATING DEVICE OBJECT: ${content["deviceName"]} `
+        );
 
         // Adding message type as updateDevice
         const messageContent = {
@@ -335,7 +338,7 @@ wss.on("connection", async (ws, req) => {
       }
     } else if (clientType === "mcu") {
       deviceObj = content;
-      console.log("DEVICE UPDATED ITS OBJECT, publishing to Redis");
+      console.log(`${deviceName} UPDATED ITS OBJECT, publishing to Redis`);
 
       // Adding message type as updateDevice
       const messageContent = {
@@ -350,7 +353,7 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", async () => {
     console.log(
       `WebSocket connection closed for ${clientType} ${
-        deviceId === null ? userId : deviceId
+        deviceId === null ? user.email : deviceName
       }`
     );
 
@@ -382,7 +385,12 @@ wss.on("connection", async (ws, req) => {
     await redisSubscriber.unsubscribe(userId, (err) => {
       if (err)
         console.error(`Failed to unsubscribe from channel ${userId}:`, err);
-      else console.log(`Unsubscribed from Redis channel for user ${userId}`);
+      else
+        console.log(
+          `UNSUBSCRIBED: ${clientType} ${
+            deviceId === null ? user.email : deviceName
+          }`
+        );
     });
   });
 });
