@@ -231,6 +231,7 @@ wss.on("connection", async (ws, req) => {
         }
       }
     } else if (clientType === "mcu") {
+      console.log("MCU: Received message from Redis: ", content);
       // Handle getting devices request
       if (parsedContent["messageType"] === "getDevices") {
         // Publish the device object when requested
