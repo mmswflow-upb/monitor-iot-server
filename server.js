@@ -203,6 +203,11 @@ wss.on("connection", async (ws, req) => {
         userId,
         JSON.stringify({ removeDevice: true, deviceId: deviceObj["deviceId"] })
       );
+    } else if (client === "user") {
+      redisPublisher.publish(
+        userId,
+        JSON.stringify({ messageType: "userDisconnected", userId: userId })
+      );
     }
   });
 
@@ -229,7 +234,7 @@ wss.on("connection", async (ws, req) => {
       }
     } else if (clientType === "mcu") {
       deviceObj = content;
-      console.log("DEVICE UPDATED ITS OBJECT, publishing to Redis:", deviceObj);
+      console.log("DEVICE UPDATED ITS OBJECT, publishing to Redis");
 
       // Adding message type as updateDevice
       const messageContent = {
