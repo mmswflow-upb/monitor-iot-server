@@ -281,35 +281,38 @@ wss.on("connection", async (ws, req) => {
     }
 
     // Start a timeout to wait for pong
-    pingTimeout = setTimeout(() => {
-      console.log("Closing connection due to no pong received");
-      if (clientType === "mcu") {
-        redisPublisher.publish(
-          userId,
-          JSON.stringify({
-            messageType: "removeDevice",
-            deviceId: deviceObj["deviceId"],
-          })
-        );
-      } else if (clientType === "user") {
-        redisPublisher.publish(
-          userId,
-          JSON.stringify({
-            messageType: "userDisconnected",
-            userId: userId,
-          })
-        );
-      }
+    pingTimeout = setTimeout(
+      () => {
+        console.log("Closing connection due to no pong received");
+        if (clientType === "mcu") {
+          redisPublisher.publish(
+            userId,
+            JSON.stringify({
+              messageType: "removeDevice",
+              deviceId: deviceObj["deviceId"],
+            })
+          );
+        } else if (clientType === "user") {
+          redisPublisher.publish(
+            userId,
+            JSON.stringify({
+              messageType: "userDisconnected",
+              userId: userId,
+            })
+          );
+        }
 
-      redisSubscriber.unsubscribe(userId);
-      ws.close();
+        redisSubscriber.unsubscribe(userId);
+        ws.close();
 
-      // Close the connection if pong is not received in time
-    }, 50000); // Wait 5 seconds for the pong
+        // Close the connection if pong is not received in time
+      },
+      clientType === "user" ? 3000 : 6000
+    ); // Wait 3 seconds for the pong for users, 6 seconds for devices
   };
 
   // Set an interval to send ping every 50 seconds
-  const interval = setInterval(sendPing, 15000); // Send a ping every 50 seconds
+  const interval = setInterval(sendPing, clientType === "user" ? 50000 : 20000); // Send a ping every 50 seconds for users and 20 seconds for devices
 
   // WebSocket message handling
   ws.on("message", async (content) => {
