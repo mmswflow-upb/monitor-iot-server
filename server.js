@@ -274,12 +274,10 @@ wss.on("connection", async (ws, req) => {
   //Set up a keep-alive interval and handle ping/pong
   let pingTimeout;
 
-  const sendPing = async () => {
+  const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
       console.log("Sending ping to keep connection alive");
-      await ws.send(
-        JSON.stringify({ messageType: "ping", message: "keep-alive" })
-      );
+      ws.send(JSON.stringify({ messageType: "ping", message: "keep-alive" }));
     }
 
     // Start a timeout to wait for pong
@@ -313,7 +311,7 @@ wss.on("connection", async (ws, req) => {
   const interval = setInterval(sendPing, 15000); // Send a ping every 50 seconds
 
   // WebSocket message handling
-  ws.on("message", async (content) => {
+  ws.on("message", (content) => {
     content = JSON.parse(content);
 
     //Device updated its state, so it must be sent to the user
@@ -332,7 +330,7 @@ wss.on("connection", async (ws, req) => {
           deviceObj: content,
           messageType: "userUpdatesDevice", // Marking the type of the message
         };
-        await redisPublisher.publish(userId, JSON.stringify(messageContent));
+        redisPublisher.publish(userId, JSON.stringify(messageContent));
       }
     } else if (clientType === "mcu") {
       deviceObj = content;
@@ -343,12 +341,12 @@ wss.on("connection", async (ws, req) => {
         deviceObj: content,
         messageType: "mcuUpdatesDevice", // Marking the type of the message
       };
-      await redisPublisher.publish(userId, JSON.stringify(messageContent));
+      redisPublisher.publish(userId, JSON.stringify(messageContent));
     }
   });
 
   // Handle WebSocket closure
-  ws.on("close", async () => {
+  ws.on("close", () => {
     console.log(
       `WebSocket connection closed for ${clientType} ${
         deviceId === null ? userId : deviceId
@@ -359,7 +357,7 @@ wss.on("connection", async (ws, req) => {
     clearTimeout(pingTimeout); // Clear any existing timeout
 
     // Unsubscribe from Redis channel
-    await redisSubscriber.unsubscribe(userId, (err) => {
+    redisSubscriber.unsubscribe(userId, (err) => {
       if (err)
         console.error(`Failed to unsubscribe from channel ${userId}:`, err);
       else console.log(`Unsubscribed from Redis channel for user ${userId}`);
@@ -368,7 +366,7 @@ wss.on("connection", async (ws, req) => {
     //If a device disconnected, it must be removed from the list of connected devices
     if (clientType === "mcu") {
       console.log("DEVICE: DISCONNECTED");
-      await redisPublisher.publish(
+      redisPublisher.publish(
         userId,
         JSON.stringify({
           messageType: "removeDevice",
@@ -377,7 +375,7 @@ wss.on("connection", async (ws, req) => {
       );
     } else if (clientType === "user") {
       console.log("USER: DISCONNECTED");
-      await redisPublisher.publish(
+      redisPublisher.publish(
         userId,
         JSON.stringify({
           messageType: "userDisconnected",
