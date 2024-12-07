@@ -352,9 +352,9 @@ wss.on("connection", async (ws, req) => {
   // Handle WebSocket closure
   ws.on("close", async () => {
     console.log(
-      `WebSocket connection closed for ${clientType} ${
+      `${
         deviceId === null ? user.email : deviceName
-      }`
+      }: CLOSED websocket connection`
     );
 
     clearInterval(interval);
@@ -387,9 +387,9 @@ wss.on("connection", async (ws, req) => {
         console.error(`Failed to unsubscribe from channel ${userId}:`, err);
       else
         console.log(
-          `UNSUBSCRIBED: ${clientType} ${
+          `${
             deviceId === null ? user.email : deviceName
-          }`
+          }: UNSUBSCRIBED from Redis channel`
         );
     });
   });
