@@ -332,7 +332,7 @@ wss.on("connection", async (ws, req) => {
           sockets.get(token).send(JSON.stringify(deviceObj));
         }
       } else if (
-        parsedContent["messageType"] === "userStopped" &&
+        parsedContent["messageType"] === "userDisconnected" &&
         userId === parsedContent["userId"]
       ) {
         console.log("MCU: USER STOPPED");
@@ -370,7 +370,7 @@ wss.on("connection", async (ws, req) => {
           redisPublisher.publish(
             userId,
             JSON.stringify({
-              messageType: "userStopped",
+              messageType: "userDisconnected",
               userId: userId,
             })
           );
