@@ -353,7 +353,7 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", () => {
     console.log(
       `WebSocket connection closed for ${clientType} ${
-        deviceId !== undefined ? deviceId : userId
+        deviceId === null ? userId : deviceId
       }`
     );
 
