@@ -301,8 +301,6 @@ wss.on("connection", async (ws, req) => {
         }
       }
     } else if (clientType === "mcu") {
-      console.log("MCU: RECEIVED content from Redis: ", parsedContent);
-
       // Handle getting devices request
       if (parsedContent["messageType"] === "getDevices") {
         // Publish the device object when requested
@@ -326,12 +324,22 @@ wss.on("connection", async (ws, req) => {
       ) {
         // Update the device object data
         deviceObj["data"] = parsedContent["deviceObj"]["data"];
-        console.log("MCU: Updated device object: ", deviceObj);
+        console.log("MCU: Updated device object");
 
         // If the socket exists, send the updated device object to the MCU
         if (sockets.has(token)) {
           console.log("MCU: Sending updated device object to MCU");
           sockets.get(token).send(JSON.stringify(deviceObj));
+        }
+      } else if (
+        parsedContent["messageType"] === "userStopped" &&
+        userId === parsedContent["userId"]
+      ) {
+        console.log("MCU: USER STOPPED");
+        if (sockets.has(token)) {
+          sockets
+            .get(token)
+            .send(JSON.stringify({ messageType: "userStopped" }));
         }
       }
     }
@@ -356,6 +364,14 @@ wss.on("connection", async (ws, req) => {
             JSON.stringify({
               messageType: "removeDevice",
               deviceId: deviceObj["deviceId"],
+            })
+          );
+        } else if (clientType === "user") {
+          redisPublisher.publish(
+            userId,
+            JSON.stringify({
+              messageType: "userStopped",
+              userId: userId,
             })
           );
         }
@@ -383,21 +399,6 @@ wss.on("connection", async (ws, req) => {
     clearTimeout(pingTimeout); // Clear any existing timeout
   });
 });
-
-//Receives socket and data as object then applies json stringify to data and sends it through the socket
-// async function sendDataThruSocket(token, data) {
-//   console.log("SENDING DATA THRU SOCKET:", data);
-//   socket = sockets.get(token);
-//   if (socket.readyState === WebSocket.OPEN) {
-//     try {
-//       socket.send(JSON.stringify(data));
-//       return true;
-//     } catch (err) {
-//       console.error("Error sending data through socket:", err);
-//     }
-//   }
-//   return false;
-// }
 
 // Function to create a device object
 function createDeviceObj(deviceId, userId, deviceName, deviceType, data) {
