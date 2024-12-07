@@ -201,7 +201,10 @@ wss.on("connection", async (ws, req) => {
     if (clientType === "mcu") {
       redisPublisher.publish(
         userId,
-        JSON.stringify({ removeDevice: true, deviceId: deviceObj["deviceId"] })
+        JSON.stringify({
+          messageType: "removeDevice",
+          deviceId: deviceObj["deviceId"],
+        })
       );
     } else if (clientType === "user") {
       redisPublisher.publish(
@@ -212,7 +215,7 @@ wss.on("connection", async (ws, req) => {
   });
 
   // WebSocket message handling
-  ws.on("message", (content) => {
+  ws.on("message", async (content) => {
     content = JSON.parse(content);
 
     //Device updated its state, so it must be sent to the user
@@ -347,7 +350,7 @@ wss.on("connection", async (ws, req) => {
         if (sockets.has(deviceId)) {
           sockets
             .get(deviceId)
-            .send(JSON.stringify({ messageType: "userStopped" }));
+            .send(JSON.stringify({ messageType: "userDisconnected" }));
         }
       }
     }
