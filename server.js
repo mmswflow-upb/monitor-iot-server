@@ -336,6 +336,7 @@ wss.on("connection", async (ws, req) => {
     //Device updated its state, so it must be sent to the user
     if (content["type"] === "pong") {
       clearTimeout(pingTimeout); // Clear the timeout if pong
+      return;
     }
 
     if (clientType === "user") {
