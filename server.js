@@ -186,7 +186,7 @@ wss.on("connection", async (ws, req) => {
       ) {
         connectedDevices.delete(parsedContent["deviceId"]);
         console.log(
-          `${email} REMOVING device with ID ${parsedContent["deviceId"]} from connected devices`
+          `${user.email} REMOVING device with ID ${parsedContent["deviceId"]} from connected devices`
         );
 
         // Optionally, send updated device list to the user
