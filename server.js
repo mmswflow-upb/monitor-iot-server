@@ -274,39 +274,39 @@ wss.on("connection", async (ws, req) => {
   //Set up a keep-alive interval and handle ping/pong
   let pingTimeout;
 
-  const sendPing = () => {
+  const sendPing = async () => {
     if (ws.readyState === WebSocket.OPEN) {
-      const socketId = clientType === "user" ? token : deviceId;
-      if (ws.readyState === WebSocket.OPEN) {
-        console.log("Sending ping to keep connection alive");
-        ws.send(JSON.stringify({ messageType: "ping", message: "keep-alive" }));
-      }
-      // Start a timeout to wait for pong
-      pingTimeout = setTimeout(() => {
-        console.log("Closing connection due to no pong received");
-        if (clientType === "mcu") {
-          redisPublisher.publish(
-            userId,
-            JSON.stringify({
-              messageType: "removeDevice",
-              deviceId: deviceObj["deviceId"],
-            })
-          );
-        } else if (clientType === "user") {
-          redisPublisher.publish(
-            userId,
-            JSON.stringify({
-              messageType: "userDisconnected",
-              userId: userId,
-            })
-          );
-        }
-
-        redisSubscriber.unsubscribe(userId);
-        ws.close();
-        // Close the connection if pong is not received in time
-      }, 10000); // Wait 10 seconds for the pong
+      console.log("Sending ping to keep connection alive");
+      await ws.send(
+        JSON.stringify({ messageType: "ping", message: "keep-alive" })
+      );
     }
+
+    // Start a timeout to wait for pong
+    pingTimeout = setTimeout(async () => {
+      console.log("Closing connection due to no pong received");
+      if (clientType === "mcu") {
+        await redisPublisher.publish(
+          userId,
+          JSON.stringify({
+            messageType: "removeDevice",
+            deviceId: deviceObj["deviceId"],
+          })
+        );
+      } else if (clientType === "user") {
+        await redisPublisher.publish(
+          userId,
+          JSON.stringify({
+            messageType: "userDisconnected",
+            userId: userId,
+          })
+        );
+      }
+
+      await redisSubscriber.unsubscribe(userId);
+      ws.close();
+      // Close the connection if pong is not received in time
+    }, 10000); // Wait 10 seconds for the pong
   };
 
   // Set an interval to send ping every 50 seconds
@@ -332,7 +332,7 @@ wss.on("connection", async (ws, req) => {
           deviceObj: content,
           messageType: "userUpdatesDevice", // Marking the type of the message
         };
-        redisPublisher.publish(userId, JSON.stringify(messageContent));
+        await redisPublisher.publish(userId, JSON.stringify(messageContent));
       }
     } else if (clientType === "mcu") {
       deviceObj = content;
@@ -343,7 +343,7 @@ wss.on("connection", async (ws, req) => {
         deviceObj: content,
         messageType: "mcuUpdatesDevice", // Marking the type of the message
       };
-      redisPublisher.publish(userId, JSON.stringify(messageContent));
+      await redisPublisher.publish(userId, JSON.stringify(messageContent));
     }
   });
 
