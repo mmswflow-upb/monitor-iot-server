@@ -224,7 +224,7 @@ wss.on("connection", async (ws, req) => {
           ws.send(
             JSON.stringify({
               devices: Array.from(connectedDevices.values()),
-              messageType: "userUpdatesDevice", // Marking the type of the message
+              messageType: "updateDevicesList", // Marking the type of the message
             })
           );
         }
