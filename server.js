@@ -313,7 +313,7 @@ wss.on("connection", async (ws, req) => {
   const interval = setInterval(sendPing, clientType === "user" ? 50000 : 20000); // Send a ping every 50 seconds for users and 20 seconds for devices
 
   // WebSocket message handling
-  ws.on("message", async (content) => {
+  ws.on("message", async (content, isBinary) => {
     content = JSON.parse(content);
 
     //Device updated its state, so it must be sent to the user
@@ -337,6 +337,14 @@ wss.on("connection", async (ws, req) => {
         await redisPublisher.publish(userId, JSON.stringify(messageContent));
       }
     } else if (clientType === "mcu") {
+      if (isBinary) {
+        const messageContent = {
+          binaryFrame: content,
+          messageType: "binaryFrame", // Marking the type of the message
+        };
+        await redisPublisher.publish(userId, JSON.stringify(messageContent));
+        return;
+      }
       deviceObj = content;
       console.log(`${deviceName} UPDATED ITS OBJECT, publishing to Redis`);
 
