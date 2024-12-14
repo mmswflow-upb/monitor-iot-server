@@ -317,8 +317,9 @@ wss.on("connection", async (ws, req) => {
     content = JSON.parse(content);
 
     //Device updated its state, so it must be sent to the user
+    clearTimeout(pingTimeout); // Clear the timeout if pong
+
     if (content["messageType"] === "pong") {
-      clearTimeout(pingTimeout); // Clear the timeout if pong
       return;
     }
 
