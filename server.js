@@ -324,6 +324,9 @@ wss.on("connection", async (ws, req) => {
   ws.on("message", async (content) => {
     content = JSON.parse(content);
 
+    if (clientType === "mcu") {
+      console.log("Received message: ", content);
+    }
     //Device updated its state, so it must be sent to the user
     if (content["messageType"] === "pong") {
       clearTimeout(pingTimeout); // Clear the timeout if pong
