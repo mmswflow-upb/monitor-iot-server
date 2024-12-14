@@ -119,7 +119,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   const user = await authenticateConnection(token);
-  console.log(`User Authenticated: ${user.email} ${clientType}`);
+  console.log("User authenticated:", user);
   if (!user || user.id !== userId) {
     ws.close(1008, "Unauthorized: Invalid token or userId mismatch");
     return;
@@ -175,17 +175,11 @@ wss.on("connection", async (ws, req) => {
     }
 
     // Parse the content to check message type
-    const parsedContent =
-      content["messageType"] === "binaryFrame" ? content : JSON.parse(content);
-
-    if (ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
+    const parsedContent = JSON.parse(content);
 
     // Check for messageType and handle accordingly
     if (clientType === "user") {
       // Handle removing a device
-
       if (
         parsedContent["messageType"] === "removeDevice" &&
         parsedContent["deviceId"]
@@ -196,15 +190,17 @@ wss.on("connection", async (ws, req) => {
         );
 
         // Optionally, send updated device list to the user
-        console.log(
-          `${user.email}: SENDING updated list of connected devices to client app`
-        );
-        ws.send(
-          JSON.stringify({
-            devices: Array.from(connectedDevices.values()),
-            messageType: "removeDevice", // Marking the type of the message
-          })
-        );
+        if (ws.readyState === WebSocket.OPEN) {
+          console.log(
+            `${user.email}: SENDING updated list of connected devices to client app`
+          );
+          ws.send(
+            JSON.stringify({
+              devices: Array.from(connectedDevices.values()),
+              messageType: "removeDevice", // Marking the type of the message
+            })
+          );
+        }
       }
 
       // Handle updating a device by the user
@@ -221,18 +217,17 @@ wss.on("connection", async (ws, req) => {
         );
 
         // Send updated list of connected devices to the user
-        console.log(
-          `${user.email}: SENDING updated list of connected devices to client app`
-        );
-        ws.send(
-          JSON.stringify({
-            devices: Array.from(connectedDevices.values()),
-            messageType: "updateDevicesList", // Marking the type of the message
-          })
-        );
-      } else if (parsedContent["messageType"] === "binaryFrame") {
-        console.log(`${user.email}: SENDING BINARY FRAME to client app`);
-        ws.send(parsedContent["binaryFrame"], parsedContent);
+        if (ws.readyState === WebSocket.OPEN) {
+          console.log(
+            `${user.email}: SENDING updated list of connected devices to client app`
+          );
+          ws.send(
+            JSON.stringify({
+              devices: Array.from(connectedDevices.values()),
+              messageType: "updateDevicesList", // Marking the type of the message
+            })
+          );
+        }
       }
     } else if (clientType === "mcu") {
       console.log(`${deviceName}: RECEIVED message from Redis`);
@@ -261,11 +256,15 @@ wss.on("connection", async (ws, req) => {
         console.log(`${deviceName}: UPDATED BY USER ${user.email}`);
 
         // If the socket exists, send the updated device object to the MCU
-        console.log(`${deviceName}: SENDING updated device object to MCU`);
-        ws.send(JSON.stringify(deviceObj));
+        if (ws.readyState === WebSocket.OPEN) {
+          console.log(`${deviceName}: SENDING updated device object to MCU`);
+          ws.send(JSON.stringify(deviceObj));
+        }
       } else if (parsedContent["messageType"] === "userDisconnected") {
         console.log(`${deviceName}: USER STOPPED`);
-        ws.send(JSON.stringify({ messageType: "userDisconnected" }));
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ messageType: "userDisconnected" }));
+        }
       }
     }
   });
@@ -314,25 +313,12 @@ wss.on("connection", async (ws, req) => {
   const interval = setInterval(sendPing, clientType === "user" ? 50000 : 20000); // Send a ping every 50 seconds for users and 20 seconds for devices
 
   // WebSocket message handling
-  ws.on("message", async (content, isBinary) => {
-    if (isBinary) {
-      content = {
-        binaryFrame: content,
-        messageType: "binaryFrame", // Marking the type of the message
-      };
-      await redisPublisher.publish(userId, {
-        messageType: "binaryFrame",
-        binaryFrame: content,
-      });
-      return;
-    }
-
+  ws.on("message", async (content) => {
     content = JSON.parse(content);
 
     //Device updated its state, so it must be sent to the user
-    clearTimeout(pingTimeout); // Clear the timeout if pong
-
     if (content["messageType"] === "pong") {
+      clearTimeout(pingTimeout); // Clear the timeout if pong
       return;
     }
 
@@ -352,7 +338,6 @@ wss.on("connection", async (ws, req) => {
       }
     } else if (clientType === "mcu") {
       deviceObj = content;
-
       console.log(`${deviceName} UPDATED ITS OBJECT, publishing to Redis`);
 
       // Adding message type as updateDevice
