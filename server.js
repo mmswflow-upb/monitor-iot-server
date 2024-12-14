@@ -119,7 +119,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   const user = await authenticateConnection(token);
-  console.log("User authenticated:", user);
+  console.log(`User Authenticated: ${user.email} ${clientType}`);
   if (!user || user.id !== userId) {
     ws.close(1008, "Unauthorized: Invalid token or userId mismatch");
     return;
