@@ -206,7 +206,7 @@ wss.on("connection", async (ws, req) => {
         ws.send(
           JSON.stringify({
             devices: Array.from(connectedDevices.values()),
-            messageType: "removeDevice", // Marking the type of the message
+            messageType: "updateDevicesList", // Marking the type of the message
           })
         );
       }
@@ -290,24 +290,6 @@ wss.on("connection", async (ws, req) => {
             deviceId === null ? user.email : deviceName
           }: NO PONG RECEIVED, closing websocket connection`
         );
-
-        if (clientType === "mcu") {
-          redisPublisher.publish(
-            userId,
-            JSON.stringify({
-              messageType: "removeDevice",
-              deviceId: deviceObj["deviceId"],
-            })
-          );
-        } else if (clientType === "user") {
-          redisPublisher.publish(
-            userId,
-            JSON.stringify({
-              messageType: "userDisconnected",
-              userId: userId,
-            })
-          );
-        }
 
         ws.terminate();
 
