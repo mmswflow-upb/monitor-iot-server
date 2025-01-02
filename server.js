@@ -7,6 +7,11 @@ const mongoose = require("mongoose");
 const WebSocket = require("ws");
 const Redis = require("ioredis");
 
+// store the latest frame for each device,
+// and a list of response objects (clients) for streaming.
+const frames = {}; // { deviceId: Buffer (JPEG data) }
+const streamSubscribers = {}; // { deviceId: [res1, res2, ...] }
+
 const app = express();
 const HTTP_PORT = process.env.PORT || 8080;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -89,6 +94,68 @@ app.post("/login", async (req, res) => {
     console.error("Login error:", error);
     res.status(500).json({ message: "Internal server error." });
   }
+});
+
+//  Endpoint for MCU to upload frames in raw JPEG form
+//    We use route-level middleware to accept raw binary data (image/jpeg).
+app.post(
+  "/uploadFrame/:deviceId",
+  express.raw({ type: "image/jpeg", limit: "10mb" }), // Accept raw JPEG up to 10 MB
+  (req, res) => {
+    const { deviceId } = req.params;
+    if (!req.body || !req.body.length) {
+      return res.status(400).send("No frame data received.");
+    }
+
+    // Store the latest frame in memory
+    frames[deviceId] = req.body;
+
+    // Broadcast to any connected stream subscribers
+    if (streamSubscribers[deviceId]) {
+      for (let response of streamSubscribers[deviceId]) {
+        response.write(`--frame\r\nContent-Type: image/jpeg\r\n\r\n`);
+        response.write(req.body);
+        response.write("\r\n");
+      }
+    }
+
+    return res.status(200).send("Frame uploaded successfully.");
+  }
+);
+
+// Endpoint for clients to consume the MJPEG stream
+//    We'll serve frames in multipart/x-mixed-replace format.
+app.get("/stream/:deviceId", (req, res) => {
+  const { deviceId } = req.params;
+
+  // If no frames have been uploaded yet, we can return a 503 or keep waiting
+  if (!frames[deviceId]) {
+    return res.status(503).send("No frames available for this device.");
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "multipart/x-mixed-replace; boundary=frame",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  // Write the most recent frame immediately
+  res.write(`--frame\r\nContent-Type: image/jpeg\r\n\r\n`);
+  res.write(frames[deviceId]);
+  res.write("\r\n");
+
+  // Add this response to the list of subscribers
+  if (!streamSubscribers[deviceId]) {
+    streamSubscribers[deviceId] = [];
+  }
+  streamSubscribers[deviceId].push(res);
+
+  // Clean up if client disconnects
+  req.on("close", () => {
+    streamSubscribers[deviceId] = streamSubscribers[deviceId].filter(
+      (r) => r !== res
+    );
+  });
 });
 
 // WebSocket server setup
@@ -292,15 +359,13 @@ wss.on("connection", async (ws, req) => {
         );
 
         ws.terminate();
-
-        // Close the connection if pong is not received in time
       },
       clientType === "user" ? 3000 : 6000
     ); // Wait 3 seconds for the pong for users, 6 seconds for devices
   };
 
-  // Set an interval to send ping every 50 seconds
-  const interval = setInterval(sendPing, clientType === "user" ? 50000 : 20000); // Send a ping every 50 seconds for users and 20 seconds for devices
+  // Set an interval to send ping every 50 seconds (user) or 20 seconds (mcu)
+  const interval = setInterval(sendPing, clientType === "user" ? 50000 : 20000);
 
   // WebSocket message handling
   ws.on("message", async (content) => {
