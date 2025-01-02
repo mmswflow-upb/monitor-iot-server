@@ -278,9 +278,6 @@ wss.on("connection", async (ws, req) => {
 
   const sendPing = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      console.log(
-        `${clientType} ${user.email} Sending ping to keep connection alive`
-      );
       ws.send(JSON.stringify({ messageType: "ping", message: "keep-alive" }));
     }
 
@@ -290,6 +287,8 @@ wss.on("connection", async (ws, req) => {
         console.log(
           `${clientType} ${user.email} Closing connection due to no pong received`
         );
+        redisSubscriber.unsubscribe(userId);
+
         if (clientType === "mcu") {
           redisPublisher.publish(
             userId,
@@ -308,7 +307,6 @@ wss.on("connection", async (ws, req) => {
           );
         }
 
-        redisSubscriber.unsubscribe(userId);
         ws.close();
 
         // Close the connection if pong is not received in time
