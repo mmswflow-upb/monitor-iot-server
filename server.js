@@ -159,6 +159,31 @@ app.get("/stream/:deviceId", (req, res) => {
   }
   streamSubscribers[deviceId].push(res);
 
+  redisSubscriber.on("message", (channel, message) => {
+    // Example: channel = "frames_1bA"
+    if (!channel.startsWith("frames_")) return;
+
+    // Extract the deviceId from channel name
+    const deviceId = channel.replace("frames_", "");
+    if (
+      !streamSubscribers[deviceId] ||
+      streamSubscribers[deviceId].length === 0
+    ) {
+      // No active HTTP subscribers for this device, do nothing
+      return;
+    }
+
+    // Decode the message from Base64 to raw JPEG
+    const frameBuffer = Buffer.from(message, "base64");
+
+    // Write the new frame to all subscribers
+    for (let res of streamSubscribers[deviceId]) {
+      res.write(`--frame\r\nContent-Type: image/jpeg\r\n\r\n`);
+      res.write(frameBuffer);
+      res.write("\r\n");
+    }
+  });
+
   // When the client closes or disconnects
   req.on("close", () => {
     // Remove the response from the subscriber list
