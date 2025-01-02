@@ -283,11 +283,21 @@ wss.on("connection", async (ws, req) => {
 
     // Start a timeout to wait for pong
     pingTimeout = setTimeout(
-      () => {
-        console.log(
-          `${clientType} ${user.email} Closing connection due to no pong received`
-        );
-        redisSubscriber.unsubscribe(userId);
+      async () => {
+        // Unsubscribe from Redis channel
+        await redisSubscriber.unsubscribe(userId, (err) => {
+          if (err)
+            console.error(
+              `Failed to unsubscribe from channel ${clientType} ${userId}:`,
+              err
+            );
+          else
+            console.log(
+              `${clientType} ${
+                deviceId === null ? user.email : deviceName
+              }: UNSUBSCRIBED from Redis channel`
+            );
+        });
 
         if (clientType === "mcu") {
           redisPublisher.publish(
