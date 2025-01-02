@@ -15,9 +15,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const redisSubscriber = new Redis(process.env.REDISCLOUD_URL); // Redis subscriber for Pub/Sub
 const redisPublisher = new Redis(process.env.REDISCLOUD_URL); // Redis publisher for Pub/Sub
 
-const streamSubscribers = {}; // { deviceId: [res1, res2, ...] }
-const subscriptionCount = {}; // deviceId -> number of active subscribers
-
 // Handle Redis connection errors
 redisSubscriber.on("error", (err) => {
   console.error("Redis Subscriber Error:", err);
@@ -92,124 +89,6 @@ app.post("/login", async (req, res) => {
     console.error("Login error:", error);
     res.status(500).json({ message: "Internal server error." });
   }
-});
-
-app.post(
-  "/uploadFrame/:deviceId",
-  express.raw({ type: "image/jpeg", limit: "10mb" }), // Accept raw JPEG up to 10 MB
-  (req, res) => {
-    const { deviceId } = req.params;
-
-    if (!req.body || !req.body.length) {
-      return res.status(400).send("No frame data received.");
-    }
-
-    // Convert the raw binary to Base64 so we can publish via Redis.
-    // (Alternatively, you could store binary in Redis as a Buffer,
-    //  but that requires a little more work with ioredis.)
-    const base64Frame = Buffer.from(req.body).toString("base64");
-
-    // Publish to channel "frames_<deviceId>"
-    const channel = `frames_${deviceId}`;
-    redisPublisher.publish(channel, base64Frame);
-
-    return res.status(200).send("Frame uploaded and published via Redis.");
-  }
-);
-
-/* ----------------------------
-   2) Streaming Route
-   GET /stream/:deviceId
-------------------------------*/
-app.get("/stream/:deviceId", (req, res) => {
-  const { deviceId } = req.params;
-  const channel = `frames_${deviceId}`;
-
-  // We set up an HTTP response for MJPEG streaming
-  res.writeHead(200, {
-    "Content-Type": "multipart/x-mixed-replace; boundary=frame",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-  });
-
-  // Write a short message or just an initial boundary
-  res.write(`--frame\r\n`);
-
-  // If we have not tracked this device's subscription count, init it
-  if (!subscriptionCount[deviceId]) {
-    subscriptionCount[deviceId] = 0;
-  }
-
-  subscriptionCount[deviceId]++;
-
-  // If this is the first subscriber, we subscribe to the Redis channel
-  if (subscriptionCount[deviceId] === 1) {
-    redisSubscriber.subscribe(channel, (err) => {
-      if (err) {
-        console.error(`Failed to subscribe to channel ${channel}:`, err);
-      } else {
-        console.log(`Subscribed to channel: ${channel}`);
-      }
-    });
-  }
-
-  // Add this response to the list of subscribers
-  if (!streamSubscribers[deviceId]) {
-    streamSubscribers[deviceId] = [];
-  }
-  streamSubscribers[deviceId].push(res);
-
-  redisSubscriber.on("message", (channel, message) => {
-    // Example: channel = "frames_1bA"
-    if (!channel.startsWith("frames_")) return;
-
-    // Extract the deviceId from channel name
-    const deviceId = channel.replace("frames_", "");
-    if (
-      !streamSubscribers[deviceId] ||
-      streamSubscribers[deviceId].length === 0
-    ) {
-      // No active HTTP subscribers for this device, do nothing
-      return;
-    }
-
-    // Decode the message from Base64 to raw JPEG
-    const frameBuffer = Buffer.from(message, "base64");
-
-    // Write the new frame to all subscribers
-    for (let res of streamSubscribers[deviceId]) {
-      res.write(`--frame\r\nContent-Type: image/jpeg\r\n\r\n`);
-      res.write(frameBuffer);
-      res.write("\r\n");
-    }
-  });
-
-  // When the client closes or disconnects
-  req.on("close", () => {
-    // Remove the response from the subscriber list
-    if (streamSubscribers[deviceId]) {
-      streamSubscribers[deviceId] = streamSubscribers[deviceId].filter(
-        (r) => r !== res
-      );
-      if (streamSubscribers[deviceId].length === 0) {
-        delete streamSubscribers[deviceId];
-      }
-    }
-
-    // Decrement subscription count for deviceId
-    subscriptionCount[deviceId]--;
-    if (subscriptionCount[deviceId] <= 0) {
-      // Unsubscribe if no more subscribers
-      subscriptionCount[deviceId] = 0;
-      redisSubscriber.unsubscribe(channel, (err) => {
-        if (err) {
-          console.error(`Failed to unsubscribe from channel ${channel}:`, err);
-        } else {
-          console.log(`Unsubscribed from channel: ${channel}`);
-        }
-      });
-    }
-  });
 });
 
 // WebSocket server setup
@@ -413,13 +292,15 @@ wss.on("connection", async (ws, req) => {
         );
 
         ws.terminate();
+
+        // Close the connection if pong is not received in time
       },
       clientType === "user" ? 3000 : 6000
     ); // Wait 3 seconds for the pong for users, 6 seconds for devices
   };
 
-  // Set an interval to send ping every 50 seconds (user) or 20 seconds (mcu)
-  const interval = setInterval(sendPing, clientType === "user" ? 50000 : 20000);
+  // Set an interval to send ping every 50 seconds
+  const interval = setInterval(sendPing, clientType === "user" ? 50000 : 20000); // Send a ping every 50 seconds for users and 20 seconds for devices
 
   // WebSocket message handling
   ws.on("message", async (content) => {
