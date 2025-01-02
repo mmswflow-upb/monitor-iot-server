@@ -317,7 +317,7 @@ wss.on("connection", async (ws, req) => {
           );
         }
 
-        ws.close();
+        ws.terminate();
 
         // Close the connection if pong is not received in time
       },
