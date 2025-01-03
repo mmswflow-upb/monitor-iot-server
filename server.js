@@ -203,6 +203,8 @@ wss.on("connection", async (ws, req) => {
         console.log(
           `${user.email}: SENDING updated list of connected devices to client app`
         );
+
+        console.log(`New list of devices: ${connectedDevices.values()}`);
         ws.send(
           JSON.stringify({
             devices: Array.from(connectedDevices.values()),
