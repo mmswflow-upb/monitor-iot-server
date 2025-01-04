@@ -365,6 +365,8 @@ wss.on("connection", async (ws, req) => {
         })
       );
     } else if (clientType === "user") {
+      connectedDevices.clear();
+
       console.log(`${clientType} ${user.email}: DISCONNECTED`);
       await redisPublisher.publish(
         userId,
